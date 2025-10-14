@@ -4,3 +4,4 @@ matplotlib
 pandas
 Pillow
 imageio
+peakutils
