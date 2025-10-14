@@ -1,0 +1,12 @@
+python:
+  - changed-files:
+    - any-glob-to-any-file: ['src/**', 'test/**']
+document:
+  - changed-files:
+    - any-glob-to-any-file: ['README.md', './**/*.md']
+docker:
+  - changed-files:
+    - any-glob-to-any-file: ['docker/**', 'docker-compose.yml']
+ci:
+  - changed-files:
+    - any-glob-to-any-file: ['.github/**']

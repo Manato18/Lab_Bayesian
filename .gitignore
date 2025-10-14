@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+venv/
+mac_venv/
+ENV/
+env/
+
+# Output files
+*.gif
+bayse_olddata/movie/
+bayse_olddata2/movie/
+
+# Generated data (optional - uncomment if you don't want to track)
+# *.csv
+# *.png
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
