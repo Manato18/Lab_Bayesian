@@ -38,6 +38,9 @@ import os
 import signal
 import sys
 
+# 設定ファイルから全パラメータをインポート
+import config
+
 def save_convergence_to_csv(folder_name, pattern, convergence_history):
     """認知収束度合いの履歴をCSVファイルに保存する関数"""
     convergence_csv_path = os.path.join(folder_name, f"cognitive_convergence_{pattern}.csv")
@@ -68,31 +71,31 @@ if __name__ == "__main__":
 
     # 認知の範囲は広くして、可視化の場所だけ狭くしてる。事後分布で計算がはみ出さない。
     world = World(
-        x_max = 8.5,        # 5.5
-        y_max = 8.5,        # 5.5
-        margin_space = 2, # 0.5
-        h = 0.01,
-        t_max = 64*10**-3,  # エコー最大時間レンジ [s]
-        dt = 100*10**-6,   # エコー時間刻み幅 [s]
-        c = 340,
-        folder_name="bayse_olddata2"
+        x_max = config.x_max,
+        y_max = config.y_max,
+        margin_space = config.margin_space,
+        h = config.h,
+        t_max = config.t_max,
+        dt = config.dt,
+        c = config.c,
+        folder_name = config.folder_name
     )
 
     bayesian = Bayesian(
-        sigma2 = (0.0001 * world.c) ** 2,
-        min_p = -320,
-        c = world.c
+        sigma2 = config.sigma2,
+        min_p = config.min_p,
+        c = config.c
     )
 
     agent = Agent(
         bayesian = bayesian,
-        margin_space = world.margin_space,
-        folder_name = world.folder_name,
+        margin_space = config.margin_space,
+        folder_name = config.folder_name,
         X = world.X,
         Y = world.Y,
         sim = {
-            "trials": 20,
-            "init_pos": [2.5, 6.05, 270, 270] # [x, y, fd, pd]
+            "trials": config.trials,
+            "init_pos": config.init_pos
         },
         world = world
     )
@@ -100,11 +103,11 @@ if __name__ == "__main__":
     bayesian.Init(world, agent)
 
     visualizer = BatVisualizer(
-        output_dir = world.folder_name + "/movie/sim2",
+        output_dir = config.output_dir_movie,
         X = world.X,
         Y = world.Y,
-        c_percentile = 95,
-        min_p = -320,
+        c_percentile = config.c_percentile,
+        min_p = config.min_p,
         x_max = world.x_max,
         y_max = world.y_max,
         wall_x = world.wall_x,

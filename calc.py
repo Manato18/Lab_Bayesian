@@ -2,24 +2,13 @@ import copy
 import numpy as np
 from scipy.special import jv
 
-h = 0.01
-freq = 40000    # 周波数 [Hz] - コウモリが発する超音波の周波数
-c = 340
-a = 0.005       # 口の半径サイズ [m] - 超音波を発する口の大きさ
-ear_dist = 0.02   # 耳間距離 [m] - コウモリの左右の耳の間の距離
-dt = 100*10**-6
-t_max=64*10**-3
-Mt = int(np.round(t_max / dt))  # 時間刻み数
-t_ax = np.linspace(0, t_max, Mt + 1)  # 時間軸の生成
-trials = 1
-x_max = y_max = 8.5
-Mx = My = int(np.round(y_max / h))
-
-threshold = 1.2 * 0.1**3  # エコー検知最小感度　(さらに、conf1の半値境目)
-# threshold = 0.0017  # エコー検知最小感度　(さらに、conf1の半値境目)
-grad = 10**15            # conf1の勾配
-k_r_noise = 60000
-k_theta_noise = 360000
+# 設定ファイルから全パラメータをインポート
+from config import (
+    h, freq, c, a, ear_dist, dt, t_max, Mt, t_ax,
+    trials, x_max, y_max, Mx, My,
+    threshold, grad, k_r_noise, k_theta_noise,
+    world_pole_wall, world_wall_pos
+)
 
 def round_angle(angle_rad_matrix):
     """
@@ -549,8 +538,7 @@ def calc(world, current_bat_x, current_bat_y, current_fd, current_pd, X, Y):
     """
     障害物を周囲に置くように変更する。
     """
-    world_pole_wall = False # 障害物を壁の線上に配置するかどうか
-    world_wall_pos = True # 壁の外を認知-20にするかどうか
+    # world_pole_wallとworld_wall_posはconfig.pyから読み込まれます
     if world_pole_wall:
         current_obs_x = world.pole_x.reshape(1, -1)
         current_obs_y = world.pole_y.reshape(1, -1)

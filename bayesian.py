@@ -1,8 +1,8 @@
 import numpy as np
 import copy
 
-y_max = 8.5
-margin_space = 2
+# 設定ファイルから必要なパラメータをインポート
+from config import y_max, margin_space, h, world_wall_pos
 
 class Bayesian:
     def __init__(self, sigma2, min_p, c):
@@ -108,11 +108,11 @@ class Bayesian:
         max_y = np.max(wall_corner_y)
         print(f"min_x: {min_x}, max_x: {max_x}, min_y: {min_y}, max_y: {max_y}")
 
-        # 座標とインデックスの対応: h = 0.01なので、座標値 × 100 = インデックス
-        min_idx_x = int(min_x / 0.01)
-        max_idx_x = int(max_x / 0.01)
-        min_idx_y = int(min_y / 0.01)
-        max_idx_y = int(max_y / 0.01)
+        # 座標とインデックスの対応: h = 0.01なので、座標値 / h = インデックス
+        min_idx_x = int(min_x / h)
+        max_idx_x = int(max_x / h)
+        min_idx_y = int(min_y / h)
+        max_idx_y = int(max_y / h)
         print(f"min_idx_x: {min_idx_x}, max_idx_x: {max_idx_x}, min_idx_y: {min_idx_y}, max_idx_y: {max_idx_y}")
 
         # nanで足し算できないそうなので0に置き換える
@@ -258,8 +258,8 @@ class Bayesian:
         # 認知収束度合いを計算
         convergence_value = self.calculate_convergence()
         self.convergence_history.append(convergence_value)
-        
-        world_wall_pos = True # 壁の外を認知-20にするかどうか
+
+        # world_wall_posはconfig.pyから読み込まれます
         if world_wall_pos:
             # 壁の範囲外を-20に設定
             wall_x = np.array([margin_space, y_max - margin_space])
@@ -274,9 +274,9 @@ class Bayesian:
             min_y = np.min(wall_corner_y)  # 2.0
             max_y = np.max(wall_corner_y)  # 6.5
             
-            # 座標とインデックスの対応: h = 0.01なので、座標値 × 100 = インデックス
-            min_idx = int(min_x / 0.01)  # 200
-            max_idx = int(max_x / 0.01)  # 650
+            # 座標とインデックスの対応: h = 0.01なので、座標値 / h = インデックス
+            min_idx = int(min_x / h)  # 200
+            max_idx = int(max_x / h)  # 650
             
             # 壁の範囲外を-20に設定
             # 1. x < 2.0 または x > 6.5 の領域

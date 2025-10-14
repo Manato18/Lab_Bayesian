@@ -14,6 +14,9 @@ World Class for Bayesian Simulation
 import pandas
 import numpy as np
 
+# 設定ファイルから必要なパラメータをインポート
+from config import world_pole_wall
+
 class World:
     """
     シミュレーション環境を管理するクラス
@@ -93,8 +96,8 @@ class World:
         wall_corner_x, wall_corner_y = np.meshgrid(self.wall_x, self.wall_y)
         self.wall_corner_x = wall_corner_x.flatten()
         self.wall_corner_y = wall_corner_y.flatten()
-        
-        world_pole_wall = False # 障害物を壁の線上に配置するかどうか
+
+        # world_pole_wallはconfig.pyから読み込まれます
         if world_pole_wall:
             """
             ここでは、壁の座標を設定している。
