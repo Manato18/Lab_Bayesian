@@ -17,7 +17,7 @@ class Obj:
         self.Deg = Deg
 
 class Agent:
-    def __init__(self, bayesian, margin_space, folder_name, X, Y, pattern="isRealBat", sim=None, Avoider_k=None, Avoider_alpha=None, world=None):
+    def __init__(self, bayesian, margin_space, folder_name, X, Y, sim=None, world=None):
         self.trials = None
         self.PositionX_all = None
         self.PositionY_all = None
@@ -34,10 +34,6 @@ class Agent:
         self.folder_name = folder_name
         self.X = X
         self.Y = Y
-        self.pattern = pattern
-
-        self.Avoider_k = Avoider_k
-        self.Avoider_alpha = Avoider_alpha
         
         # CSVファイルの初期化（位置情報保存用）
         self.csv_filename = os.path.join(self.folder_name, 'position_data.csv')
@@ -50,19 +46,11 @@ class Agent:
         # 連続回避カウンター
         self.consecutive_avoidance_count = 0
         
-        if pattern == "isRealBat":
-            print("real flight data loading...")
-            self._real_flight()
-            self.PositionX = self.PositionX_all[0]
-            self.PositionY = self.PositionY_all[0]
-            self.fd = self.fd_all[0]
-            self.pd = self.pd_all[0]
-        else:
-            self.trials = sim["trials"]
-            self.PositionX = sim["init_pos"][0]
-            self.PositionY = sim["init_pos"][1]
-            self.fd = sim["init_pos"][2]
-            self.pd = sim["init_pos"][3]
+        self.trials = sim["trials"]
+        self.PositionX = sim["init_pos"][0]
+        self.PositionY = sim["init_pos"][1]
+        self.fd = sim["init_pos"][2]
+        self.pd = sim["init_pos"][3]
 
         self.bayesian = bayesian
     
@@ -111,92 +99,10 @@ class Agent:
             writer = csv.writer(csvfile)
             writer.writerow([self.step_idx, self.PositionX, self.PositionY, self.fd, self.pd])
 
-        if self.pattern == "isRealBat":
-            # 事後分布をプロットしてmovieフォルダに保存（移動前）
-            posterior_sel, X_sel, Y_sel = self._plot_posterior_distribution(
-                posx = self.PositionX,
-                posy = self.PositionY,
-                pd = self.pd,
-                fd = self.fd,
-            )
-            self.PositionX = self.PositionX_all[self.step_idx]
-            self.PositionY = self.PositionY_all[self.step_idx]
-            self.fd = self.fd_all[self.step_idx]
-            self.pd = self.pd_all[self.step_idx]
-            flag = True
-
-
-        elif self.pattern == "avoidobj":
-            self.PositionX, self.PositionY, self.fd, self.pd = self._sim_avoidobjflight(self.PositionX, self.PositionY, self.fd, self.pd, visualizer)
-        
-        elif self.pattern == "sim2":
-            self.PositionX, self.PositionY, self.fd, self.pd, flag = self._sim_flight2(self.PositionX, self.PositionY, self.fd, self.pd, visualizer)
-
-        else:
-            raise ValueError("Invalid pattern")
+        self.PositionX, self.PositionY, self.fd, self.pd, flag = self._sim_flight2(self.PositionX, self.PositionY, self.fd, self.pd, visualizer)
         
         return flag
-    
-    def avoid_angle(self, newobjs, Avoider_k, Avoider_alpha):
-        SumVectorX = 0.0
-        SumVectorY = 0.0
-        count = 0
-        for obj in newobjs:
-            print("--------------------------------")
-            print(count)
-            count += 1
-            print(obj.Dis)
-            print(obj.Deg)
-            DistanceForce = math.sqrt(Avoider_k / obj.Dis)
-            DirectionForce = math.sin(math.atan(Avoider_alpha / obj.Dis))
-            VectorLength = obj.Intens * 1000 * DistanceForce * DirectionForce
-            SumVectorX += VectorLength * math.sin(obj.Deg)
-            SumVectorY += VectorLength * math.cos(obj.Deg)
-        if SumVectorY != 0.:
-            return (180. / math.pi) * math.atan2(-SumVectorX, (1 - SumVectorY))
-        return 0.
 
-    def _sim_avoidobjflight(self, posx, posy, fd, pd, visualizer):
-        """
-        障害物に応じた回避行動をする関数
-        （Yamada et al., Advanced Robotics, 33 2019）
-
-        Args:
-            posx (float): コウモリのx座標
-            posy (float): コウモリのy座標
-            fd (float): コウモリの飛行方向（度数法）
-            pd (float): コウモリのパルス発射方向（度数法）
-        
-        Returns:
-            posx (float): 更新されたコウモリのx座標
-            posy (float): 更新されたコウモリのy座標
-            fd (float): 更新されたコウモリの飛行方向
-            pd (float): 更新されたコウモリのパルス発射方向
-        """
-        # 事後分布をプロットしてmovieフォルダに保存（移動前）
-        posterior_sel, X_sel, Y_sel = self._plot_posterior_distribution(
-            posx = self.PositionX,
-            posy = self.PositionY,
-            pd = self.pd,
-            fd = self.fd,
-        )
-        
-        ## main (self.AvoidDeg: Avoidance Degree)
-        #Newobj:Obj class
-        self.AvoidDeg =  self.avoid_angle(self.Newobj, self.Avoider_k, self.Avoider_alpha)
-
-        # 進行方向（fd）に直線に進む
-        move_distance = 0.1  # 1ステップの移動距離[m]
-        fd_rad = np.deg2rad(fd)
-        new_posx = posx + move_distance * np.cos(fd_rad)
-        new_posy = posy + move_distance * np.sin(fd_rad)
-
-        # 角度の更新と正規化
-        new_fd = self.normalize_angle_deg(fd + self.AvoidDeg)
-        new_pd = self.normalize_angle_deg(pd + self.AvoidDeg)
-        print(f"{fd}度から{self.AvoidDeg}があり、{new_fd}度へ移動")
-        
-        return new_posx, new_posy, new_fd, new_pd
 
     def _sim_flight2(self, posx, posy, fd, pd, visualizer):
         """
@@ -479,52 +385,3 @@ class Agent:
         print(f"事後分布プロットを保存しました: {filename}")
 
         return posterior_sel, X_sel, Y_sel
-    
-    # ==============================
-    # コウモリの飛行経路取得関数 - 実験データからコウモリの飛行経路と方向情報を読み込む
-    # ==============================
-    def _real_flight(self):
-        """
-        実験データからコウモリの飛行経路、方向、パルスタイミングなどの情報を読み込み計算する関数
-        
-        Returns:
-            int: 超音波パルスの合計発射回数
-            np.array: 各パルス時のコウモリのx座標
-            np.array: 各パルス時のコウモリのy座標
-            np.array: 頭の方向(ラジアン値)
-            np.array: 頭の方向(度数法)
-            np.array: 飛行方向(度数法)
-            np.array: パルス発射方向(度数法)
-        """
-        # 以下はコメントアウトされた代替のデータ読み込み方法
-        #    bat_loc = pandas.read_csv(f'650_no1.csv',header=6,index_col=0,usecols=range(0,5)) #コウモリ全軌跡
-        #    bat_loc = pandas.read_csv(f'D:/{fname}/{bat_num}/{bat_num}_no1.csv',header=6,index_col=0,usecols=range(0,5)) #コウモリ全軌跡
-        #    bat_loc['X'] = bat_loc['X'] + d_to_wall_x + margin_space
-        #    bat_loc['Z'] = bat_loc['Z'] + d_to_wall_y + margin_space
-        
-        # パルスタイミングデータの読み込み
-        pulse_timing = pandas.read_csv(f"{self.folder_name}/650_pulse_timing_500.csv", index_col=0)  # パルスタイミングとその座標を読み込む
-        #    pulse_timing = pandas.read_csv(f'650_pulse_timing_cut.csv',index_col=0) #別のパルスタイミングデータファイル
-        #    pulse_timing = pandas.read_csv(f'D:/{fname}/{bat_num}/{bat_num}_pulse_timing.csv',index_col=0) #別パスのパルスタイミングデータファイル
-        
-        pulse_direction_file_path = f"{self.folder_name}/20241016_650_pulse_direction(10パルス目から200くらいまで).csv"
-        df_pulse_direction = pandas.read_csv(pulse_direction_file_path)
-        df_pulse_direction['radians'] = np.radians(df_pulse_direction['pulsedir'])
-
-        # データの処理
-        self.trials = len(pulse_timing)  # パルス放射回数の計算
-        # コウモリの座標を取得し、マージンを考慮して調整
-        self.PositionX_all = pulse_timing["x"].values + self.margin_space  # pandas.Series型だと後の処理でエラーが出るためnumpy配列に変換
-        self.PositionY_all = pulse_timing["y"].values + self.margin_space  # 同上
-
-        # コウモリの頭の方向を計算
-        bat_x_pre = np.roll(self.PositionX_all, 1)  # 前のフレームのx座標（配列を右方向に1つシフト）
-        bat_y_pre = np.roll(self.PositionY_all, 1)  # 前のフレームのy座標
-        head_direc = np.arctan2(self.PositionY_all - bat_y_pre, self.PositionX_all - bat_x_pre)  # 現在と前の位置から頭の方向を計算（ラジアン値）
-        head_direc[0] = head_direc[1]  # 最初のデータ点は前の点がないため、2番目の方向と同じに設定
-        head_direc_deg = np.rad2deg(head_direc)  # ラジアンから度数法に変換
-        pulse_direction_deg = df_pulse_direction['pulsedir'].values
-
-        # 飛行方向とパルス発射方向を設定（このモデルでは同じ方向を使用）
-        self.fd_all = head_direc_deg  # flight direction [deg] - 飛行方向
-        self.pd_all = pulse_direction_deg  # pulse direction [deg] - パルス発射方向

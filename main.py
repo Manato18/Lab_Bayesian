@@ -58,7 +58,7 @@ def signal_handler(sig, frame):
     """Ctrl+Cが押された時のシグナルハンドラ"""
     print("\nプログラムが中断されました。認知収束度合いのCSVファイルを保存します...")
     if 'bayesian' in globals() and 'world' in globals() and 'agent' in globals():
-        save_convergence_to_csv(world.folder_name, agent.pattern, bayesian.convergence_history)
+        save_convergence_to_csv(world.folder_name, "sim2", bayesian.convergence_history)
     sys.exit(0)
 
 
@@ -90,35 +90,17 @@ if __name__ == "__main__":
         folder_name = world.folder_name,
         X = world.X,
         Y = world.Y,
-        # pattern = "isRealBat",       # "isRealBat"または"sim1"を選択
-        # pattern = "avoidobj",       # "isRealBat"または"avoidobj"を選択
-        pattern = "sim2",       # "isRealBat"または"sim2"を選択
         sim = {
             "trials": 20,
             "init_pos": [2.5, 6.05, 270, 270] # [x, y, fd, pd]
         },
-        Avoider_k = 0.005,      # 0.010
-        Avoider_alpha = 100.,   # 100.
-        world = world           # worldオブジェクトを追加
+        world = world
     )
-    """
-        調整による挙動変化（avoidobj）
-        - 遠距離での反応開始タイミングを変えたい
-            - k↑:障害物まで距離がある段階から舵を切り始める
-            - k↓:より近づくまでほとんど進行方向を維持
-        - 回避の鋭さ／全体ゲインを変えたい
-            - α↑：同じ距離でも強く大きく旋回
-            - α↓：ゆるやかに穏やかに旋回
-        - 安定性と過敏さのトレードオフ
-            - α, k を両方大きくすると非常に過敏・発振しやすい
-            - 両方小さくすると安定だが障害物に接触しやすい
-    """
-
-    # 現在はtrial数が必要なのでAgent後
+# 現在はtrial数が必要なのでAgent後
     bayesian.Init(world, agent)
 
     visualizer = BatVisualizer(
-        output_dir = world.folder_name + f"/movie/{agent.pattern}",
+        output_dir = world.folder_name + "/movie/sim2",
         X = world.X,
         Y = world.Y,
         c_percentile = 95,
@@ -176,6 +158,6 @@ if __name__ == "__main__":
         print("GIF作成に失敗しました")
     
     # 認知収束度合いの履歴をCSVファイルに保存
-    save_convergence_to_csv(world.folder_name, agent.pattern, bayesian.convergence_history)
+    save_convergence_to_csv(world.folder_name, "sim2", bayesian.convergence_history)
     
     print("シミュレーション完了")
