@@ -211,18 +211,25 @@ class ControlPC:
             print(f"  ✗ ファイル保存エラー: {e}")
             return None
 
-    def calculate_movement(self, step, current_position, detections):
+    def calculate_posterior_from_detections(self, step, current_position, detections):
         """
-        物体定位結果から移動指令を計算
+        物体定位結果から事後分布を計算・更新（ベイズ定位点導入.pyと同じ計算フロー）
+
+        このメソッドは、ロボットから受信した物体定位結果（detections）を使って、
+        ベイズ推論による事後確率分布を更新します。
 
         Args:
             step (int): ステップ番号
-            current_position (dict): {'x', 'y', 'fd', 'pd'}
-            detections (list): [{'distance', 'angle'}, ...]
+            current_position (dict): 現在位置 {'x': float, 'y': float, 'fd': float, 'pd': float}
+            detections (list): 物体定位結果 [{'distance': mm, 'angle': 度}, ...]
 
-        Returns:
-            dict: 移動指令 {'avoidance_direction', 'move_distance', 'pulse_direction'}
-                  と新しい位置 {'x', 'y', 'fd', 'pd'}
+        処理フロー:
+            1. detections を XY座標に変換
+            2. 耳の位置を計算
+            3. 往復距離を計算
+            4. エコー到達時間を計算
+            5. 空間行列を計算
+            6. ベイズ更新を実行
         """
         # Agentの位置を更新
         self.agent.PositionX = current_position['x']
@@ -236,120 +243,124 @@ class ControlPC:
         for det in detections:
             self.agent.Newobj.append(Obj(Dis=det['distance'], Deg=det['angle']))
 
-        # 耳の位置を計算
-        earL_x, earL_y, earR_x, earR_y = ear_posit(
-            self.agent.PositionX, self.agent.PositionY, self.agent.pd
-        )
+        print(f"  [事後分布計算] {len(detections)}個の検出結果から事後分布を更新")
 
         # detectionsからy_el, y_erを計算
         if len(detections) > 0:
             # 距離と角度を配列に変換
             distances = np.array([det['distance'] for det in detections]) / 1000.0  # mm -> m
             angles = np.array([det['angle'] for det in detections])  # 度
-            
-            # 障害物のXY座標を計算
+
+            # calc.pyの関数が期待する2次元配列形式に変換
+            distances_2d = distances.reshape(1, -1)
+            angles_2d = angles.reshape(1, -1)
+            bat_x_2d = np.array([current_position['x']])
+            bat_y_2d = np.array([current_position['y']])
+            pd_2d = np.array([current_position['pd']])
+
+            # 障害物のXY座標を計算（ベイズ定位点導入.py と同じ）
             obs_x, obs_y = r_theta_to_XY_calc(
-                distances, angles,
-                self.agent.PositionX, self.agent.PositionY, self.agent.pd
+                distances_2d, angles_2d,
+                bat_x_2d, bat_y_2d, pd_2d
             )
-            
+
+            # 耳の位置を計算
+            earL_x, earL_y, earR_x, earR_y = ear_posit(
+                current_position['x'], current_position['y'], current_position['pd']
+            )
+
             # 各耳までの往復距離を計算
             goback_L = real_dist_goback(
-                self.agent.PositionX, self.agent.PositionY,
+                current_position['x'], current_position['y'],
                 earL_x, earL_y,
                 obs_x, obs_y
             )
             goback_R = real_dist_goback(
-                self.agent.PositionX, self.agent.PositionY,
+                current_position['x'], current_position['y'],
                 earR_x, earR_y,
                 obs_x, obs_y
             )
-            
+
             # エコー到達時間に変換
             y_el, y_er = space_echo_translater(goback_L, goback_R)
-            
+
             # bayesianが期待する形状に変換: (1, n)
             y_el = y_el.reshape(1, -1)
             y_er = y_er.reshape(1, -1)
-            
-            print(f"  計算完了: y_el形状={y_el.shape}, y_er形状={y_er.shape}")
+
+            print(f"  [事後分布計算] エコー時間計算完了: y_el形状={y_el.shape}, y_er形状={y_er.shape}")
         else:
             # 検出がない場合は空の2D配列
             y_el = np.array([[]]).reshape(1, 0)
             y_er = np.array([[]]).reshape(1, 0)
+            print(f"  [事後分布計算] 検出なし: 空の観測データで更新")
 
-        # ベイズ更新のための空間行列を計算
+        # 空間行列を計算
+        print(f"  [事後分布計算] 空間行列を計算中...")
         current_r_2vec, current_theta_2vec_rad = r_theta_matrix(
-            np.array([self.agent.PositionX]), np.array([self.agent.PositionY]),
-            self.world.X, self.world.Y, np.array([self.agent.pd])
+            np.array([current_position['x']]), np.array([current_position['y']]),
+            self.world.X, self.world.Y, np.array([current_position['pd']])
         )
+
+        # 耳の位置を再計算（空間行列計算用）
+        earL_x, earL_y, earR_x, earR_y = ear_posit(
+            current_position['x'], current_position['y'], current_position['pd']
+        )
+
         current_obs_goback_dist_matrix_L = real_dist_goback_matrix(
-            np.array([self.agent.PositionX]), np.array([self.agent.PositionY]),
-            np.array([earL_x]), np.array([earL_y]), self.world.X, self.world.Y
+            np.array([current_position['x']]), np.array([current_position['y']]),
+            np.array([earL_x]), np.array([earL_y]),
+            self.world.X, self.world.Y
         )
         current_obs_goback_dist_matrix_R = real_dist_goback_matrix(
-            np.array([self.agent.PositionX]), np.array([self.agent.PositionY]),
-            np.array([earR_x]), np.array([earR_y]), self.world.X, self.world.Y
+            np.array([current_position['x']]), np.array([current_position['y']]),
+            np.array([earR_x]), np.array([earR_y]),
+            self.world.X, self.world.Y
         )
+
         current_attenuation_matrix = dist_attenuation(current_r_2vec) * \
                                       direc_attenuation(current_theta_2vec_rad)
         current_confidence_matrix = sigmoid(current_attenuation_matrix,
                                            config.threshold, config.grad)
 
+        print(f"  [事後分布計算] 空間行列計算完了")
+
         # ベイズ更新
+        print(f"  [事後分布計算] ベイズ更新を実行中...")
         self.bayesian.update_belief(
             step, y_el, y_er,
             current_obs_goback_dist_matrix_L,
             current_obs_goback_dist_matrix_R,
             current_confidence_matrix
         )
+        print(f"  [事後分布計算] ベイズ更新完了")
 
-        # 回避方向の計算
-        posterior_sel, X_sel, Y_sel = self.agent._plot_posterior_distribution(
-            posx=self.agent.PositionX,
-            posy=self.agent.PositionY,
-            pd=self.agent.pd,
-            fd=self.agent.fd
+    def calculate_movement_command(self, step, current_position):
+        """
+        更新された事後分布から移動指令を計算
+        
+        このメソッドは、ベイズ推論で更新された事後確率分布を解析して、
+        ロボットの回避方向と移動距離を決定します。
+        
+        実装はAgentクラスのcalculate_avoidance_commandメソッドに委譲されています。
+        これにより、コードの重複を削減し、保守性を向上させています。
+        
+        Args:
+            step (int): ステップ番号
+            current_position (dict): 現在位置 {'x': float, 'y': float, 'fd': float, 'pd': float}
+        
+        Returns:
+            tuple: (command, new_position)
+                - command (dict): 移動指令 {'avoidance_direction', 'move_distance', 'pulse_direction'}
+                - new_position (dict): 新しい位置 {'x', 'y', 'fd', 'pd'}
+        """
+        print(f"  [移動指令計算] 事後分布から回避方向を計算中...")
+        
+        # Agentクラスのメソッドに処理を委譲
+        command, new_position = self.agent.calculate_avoidance_command(
+            current_position, step
         )
-
-        angle_results, avoid_angle, value, flag = \
-            self.agent._analyze_posterior_for_avoidance(X_sel, Y_sel, posterior_sel)
-
-        # 新しい方向を計算
-        new_fd = self.agent.normalize_angle_deg(self.agent.fd - avoid_angle)
-        new_pd = self.agent.normalize_angle_deg(self.agent.pd - avoid_angle)
-        if step >= 6:
-            new_pd = self.agent.normalize_angle_deg(self.agent.fd - (avoid_angle * 2))
-
-        # 移動距離を決定
-        if flag:
-            move_distance = 150.0  # mm
-        else:
-            move_distance = 50.0  # mm
-
-        # 新しい位置を計算
-        move_distance_m = move_distance / 1000.0  # mm -> m
-        new_x = self.agent.PositionX + move_distance_m * np.cos(np.deg2rad(new_fd))
-        new_y = self.agent.PositionY + move_distance_m * np.sin(np.deg2rad(new_fd))
-
-        # 移動指令
-        command = {
-            'avoidance_direction': float(avoid_angle),
-            'move_distance': float(move_distance),
-            'pulse_direction': float(new_pd)
-        }
-
-        # 新しい位置
-        new_position = {
-            'x': float(new_x),
-            'y': float(new_y),
-            'fd': float(new_fd),
-            'pd': float(new_pd)
-        }
-
-        print(f"  → 計算完了: 回避={avoid_angle:.1f}度, 移動={move_distance:.1f}mm")
-        print(f"  → 新位置: ({new_x:.3f}, {new_y:.3f}), fd={new_fd:.1f}度, pd={new_pd:.1f}度")
-
+        
         return command, new_position
 
     def handle_request(self, request):
@@ -396,8 +407,11 @@ class ControlPC:
             current_position = self.get_robot_position_from_env_server()
             print(f"  現在位置: ({current_position['x']:.3f}, {current_position['y']:.3f})")
 
-            # 移動指令を計算（実際のdetectionsを渡す）
-            command, new_position = self.calculate_movement(step, current_position, detections)
+            # 事後分布を計算・更新（ベイズ定位点導入.pyと同じフロー）
+            self.calculate_posterior_from_detections(step, current_position, detections)
+
+            # 移動指令を計算
+            command, new_position = self.calculate_movement_command(step, current_position)
 
             # env_serverに新しい位置を更新
             print("  env_serverに新しい位置を更新中...")

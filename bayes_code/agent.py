@@ -155,6 +155,74 @@ class Agent:
         
         return new_posx, new_posy, new_fd, new_pd, flag
 
+    def calculate_avoidance_command(self, current_position, step):
+        """
+        事後分布から移動指令を計算
+        
+        このメソッドは、ベイズ推論で更新された事後確率分布を解析して、
+        ロボットの回避方向と移動距離を決定します。
+        control_pc.pyとagent.pyで重複していたロジックを統合しました。
+        
+        Args:
+            current_position (dict): 現在位置 {'x': float, 'y': float, 'fd': float, 'pd': float}
+            step (int): ステップ番号
+            
+        Returns:
+            tuple: (command, new_position)
+                - command (dict): 移動指令 {'avoidance_direction', 'move_distance', 'pulse_direction'}
+                - new_position (dict): 新しい位置 {'x', 'y', 'fd', 'pd'}
+        """
+        # 事後分布をプロット
+        posterior_sel, X_sel, Y_sel = self._plot_posterior_distribution(
+            posx=current_position['x'],
+            posy=current_position['y'],
+            pd=current_position['pd'],
+            fd=current_position['fd']
+        )
+        
+        # 回避角度を計算
+        angle_results, avoid_angle, value, flag = \
+            self._analyze_posterior_for_avoidance(X_sel, Y_sel, posterior_sel)
+        
+        print(f"  [移動指令計算] 回避角度: {avoid_angle:.1f}度, フラグ: {flag}")
+        
+        # 新しい方向を計算
+        new_fd = self.normalize_angle_deg(current_position['fd'] - avoid_angle)
+        new_pd = self.normalize_angle_deg(current_position['pd'] - avoid_angle)
+        if step >= 6:
+            new_pd = self.normalize_angle_deg(current_position['fd'] - (avoid_angle * 2))
+        
+        # 移動距離を決定
+        if flag:
+            move_distance = 150.0  # mm
+        else:
+            move_distance = 50.0  # mm
+        
+        # 新しい位置を計算
+        move_distance_m = move_distance / 1000.0  # mm -> m
+        new_x = current_position['x'] + move_distance_m * np.cos(np.deg2rad(new_fd))
+        new_y = current_position['y'] + move_distance_m * np.sin(np.deg2rad(new_fd))
+        
+        # 移動指令
+        command = {
+            'avoidance_direction': float(avoid_angle),
+            'move_distance': float(move_distance),
+            'pulse_direction': float(new_pd)
+        }
+        
+        # 新しい位置
+        new_position = {
+            'x': float(new_x),
+            'y': float(new_y),
+            'fd': float(new_fd),
+            'pd': float(new_pd)
+        }
+        
+        print(f"  [移動指令計算] 完了: 回避={avoid_angle:.1f}度, 移動={move_distance:.1f}mm")
+        print(f"  [移動指令計算] 新位置: ({new_x:.3f}, {new_y:.3f}), fd={new_fd:.1f}度, pd={new_pd:.1f}度")
+        
+        return command, new_position
+
     def _analyze_posterior_for_avoidance(self, X_sel, Y_sel, posterior_sel):
         """
         回避のための事後分布分析
