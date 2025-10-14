@@ -43,7 +43,8 @@ import config
 
 def save_convergence_to_csv(folder_name, pattern, convergence_history):
     """認知収束度合いの履歴をCSVファイルに保存する関数"""
-    convergence_csv_path = os.path.join(folder_name, f"cognitive_convergence_{pattern}.csv")
+    os.makedirs(config.output_dir, exist_ok=True)
+    convergence_csv_path = os.path.join(config.output_dir, f"cognitive_convergence_{pattern}.csv")
     try:
         with open(convergence_csv_path, 'w', newline='') as csvfile:
             csv_writer = csv.writer(csvfile)
@@ -103,7 +104,7 @@ if __name__ == "__main__":
     bayesian.Init(world, agent)
 
     visualizer = BatVisualizer(
-        output_dir = config.output_dir_movie,
+        output_dir = config.output_dir_movie_sim2,
         X = world.X,
         Y = world.Y,
         c_percentile = config.c_percentile,

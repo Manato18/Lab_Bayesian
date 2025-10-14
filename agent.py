@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import os
 import csv
 
+import config
 from calc import calc
 
 class Obj:
@@ -36,7 +37,8 @@ class Agent:
         self.Y = Y
         
         # CSVファイルの初期化（位置情報保存用）
-        self.csv_filename = os.path.join(self.folder_name, 'position_data.csv')
+        os.makedirs(config.output_dir, exist_ok=True)
+        self.csv_filename = os.path.join(config.output_dir, 'position_data.csv')
         with open(self.csv_filename, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(['step', 'position_x', 'position_y', 'head_direction', 'pulse_direction'])
@@ -307,7 +309,7 @@ class Agent:
             return x_rot, y_rot
 
         # movieフォルダが存在しない場合は作成
-        movie_dir = "./bayse_olddata2/movie/事後分布"
+        movie_dir = config.output_dir_movie_posterior
         if not os.path.exists(movie_dir):
             os.makedirs(movie_dir)
 
