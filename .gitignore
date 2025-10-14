@@ -13,8 +13,13 @@ env/
 
 # Output files
 *.gif
-bayse_olddata/movie/
-bayse_olddata2/movie/
+
+# Data directories (not tracked)
+bayse_olddata/
+bayse_olddata2/
+
+# Serena configuration
+.serena/
 
 # Generated data (optional - uncomment if you don't want to track)
 # *.csv
