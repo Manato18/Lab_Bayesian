@@ -23,6 +23,7 @@ from bayes_code.world import World
 from bayes_code.bayesian import Bayesian
 from bayes_code.agent import Agent, Obj
 from bayes_code.calc import r_theta_matrix, real_dist_goback_matrix, dist_attenuation, direc_attenuation, sigmoid, ear_posit, r_theta_to_XY_calc, real_dist_goback, space_echo_translater
+from bayes_code.localization import Localizer
 
 
 class ControlPC:
@@ -106,6 +107,15 @@ class ControlPC:
         os.makedirs(self.save_dir, exist_ok=True)
         print(f"✓ ファイル保存先ディレクトリ: {self.save_dir}")
 
+        # Localizer初期化（物体定位計算）
+        print("Localizer初期化中...")
+        self.localizer = Localizer(
+            mic_distance=116,  # マイク間距離 [mm]
+            temperature=21,     # 温度 [℃]
+            threshold=0.15      # ピーク検出閾値
+        )
+        print("✓ Localizer初期化完了")
+
         print("=" * 60)
         print("制御PC初期化完了")
         print("=" * 60)
@@ -174,7 +184,7 @@ class ControlPC:
             content_base64 (str): Base64エンコードされたファイル内容
 
         Returns:
-            bool: 成功/失敗
+            str or None: 保存先のファイルパス（成功時）、None（失敗時）
         """
         try:
             # Base64デコード（送信時にエンコードされたデータを元に戻す）
@@ -195,11 +205,11 @@ class ControlPC:
                 f.write(content_bytes)
 
             print(f"  ✓ ファイル保存完了: {save_path} ({len(content_bytes)} bytes)")
-            return True
+            return save_path  # 保存先パスを返す
 
         except Exception as e:
             print(f"  ✗ ファイル保存エラー: {e}")
-            return False
+            return None
 
     def calculate_movement(self, step, current_position, detections):
         """
@@ -358,10 +368,26 @@ class ControlPC:
 
             print(f"\nステップ{step}: ロボットから要求受信")
 
-            # _data_Multi.dat ファイルが送信されている場合は保存
+            # _data_Multi.dat ファイルが送信されている場合は保存して定位計算を実行
+            detections = []
             if data_multi_file is not None:
                 print(f"  _data_Multi.dat ファイル受信: {data_multi_file['file_path']}")
-                self.save_data_multi_file(step, data_multi_file['file_path'], data_multi_file['content_base64'])
+                save_path = self.save_data_multi_file(step, data_multi_file['file_path'], data_multi_file['content_base64'])
+
+                # 定位計算を実行
+                if save_path is not None:
+                    print("  [定位計算] 物体定位を実行中...")
+                    detections = self.localizer.localize(save_path)
+                    if len(detections) > 0:
+                        print(f"  [定位計算] {len(detections)}個の物体を検出しました")
+                        for idx, det in enumerate(detections):
+                            print(f"    物体{idx+1}: 距離={det['distance']:.1f}mm, "
+                                  f"角度={det['angle']:.1f}度, "
+                                  f"強度={det['intensity']:.3f}")
+                    else:
+                        print("  [定位計算] 物体は検出されませんでした")
+                else:
+                    print("  [定位計算] ファイル保存失敗のため定位計算をスキップ")
             else:
                 print("  _data_Multi.dat ファイルなし（ファイルが見つからなかった可能性あり）")
 
@@ -370,8 +396,8 @@ class ControlPC:
             current_position = self.get_robot_position_from_env_server()
             print(f"  現在位置: ({current_position['x']:.3f}, {current_position['y']:.3f})")
 
-            # 移動指令を計算（detectionsは空リストを渡す）
-            command, new_position = self.calculate_movement(step, current_position, [])
+            # 移動指令を計算（実際のdetectionsを渡す）
+            command, new_position = self.calculate_movement(step, current_position, detections)
 
             # env_serverに新しい位置を更新
             print("  env_serverに新しい位置を更新中...")
