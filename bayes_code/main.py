@@ -27,10 +27,10 @@ P(位置|観測データ) ∝ P(観測データ|位置) × P(位置)
 """
 
 # 可視化用のカスタムクラス
-from world import World
-from agent import Agent
-from bayesian import Bayesian
-from visualize import BatVisualizer
+from bayes_code.world import World
+from bayes_code.agent import Agent
+from bayes_code.bayesian import Bayesian
+from bayes_code.visualize import BatVisualizer
 import numpy as np
 import copy
 import csv
@@ -39,7 +39,7 @@ import signal
 import sys
 
 # 設定ファイルから全パラメータをインポート
-import config
+from bayes_code import config
 
 def save_convergence_to_csv(folder_name, pattern, convergence_history):
     """認知収束度合いの履歴をCSVファイルに保存する関数"""

@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import os
 import csv
 
-import config
-from calc import calc
+from bayes_code import config
+from bayes_code.calc import calc
 
 class Obj:
     def __init__(self, Dis=None, Deg=None):

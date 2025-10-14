@@ -16,11 +16,11 @@ Control PC - 制御PC
 import socket
 import json
 import numpy as np
-import config
-from world import World
-from bayesian import Bayesian
-from agent import Agent, Obj
-from calc import r_theta_matrix, real_dist_goback_matrix, dist_attenuation, direc_attenuation, sigmoid, ear_posit, r_theta_to_XY_calc, real_dist_goback, space_echo_translater
+from bayes_code import config
+from bayes_code.world import World
+from bayes_code.bayesian import Bayesian
+from bayes_code.agent import Agent, Obj
+from bayes_code.calc import r_theta_matrix, real_dist_goback_matrix, dist_attenuation, direc_attenuation, sigmoid, ear_posit, r_theta_to_XY_calc, real_dist_goback, space_echo_translater
 
 
 class ControlPC:

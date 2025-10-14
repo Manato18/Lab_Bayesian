@@ -15,7 +15,7 @@ import pandas
 import numpy as np
 
 # 設定ファイルから必要なパラメータをインポート
-from config import world_pole_wall
+from bayes_code.config import world_pole_wall
 
 class World:
     """

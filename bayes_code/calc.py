@@ -3,7 +3,7 @@ import numpy as np
 from scipy.special import jv
 
 # 設定ファイルから全パラメータをインポート
-from config import (
+from bayes_code.config import (
     h, freq, c, a, ear_dist, dt, t_max, Mt, t_ax, eps_y,
     trials, x_max, y_max, Mx, My,
     threshold, grad, k_r_noise, k_theta_noise,

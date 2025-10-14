@@ -13,7 +13,7 @@ Environment Server - 環境情報サーバー
 import socket
 import json
 import pandas as pd
-import config
+from bayes_code import config
 
 
 class EnvServer:

@@ -2,7 +2,7 @@ import numpy as np
 import copy
 
 # 設定ファイルから必要なパラメータをインポート
-from config import y_max, margin_space, h, world_wall_pos
+from bayes_code.config import y_max, margin_space, h, world_wall_pos
 
 class Bayesian:
     def __init__(self, sigma2, min_p, c):

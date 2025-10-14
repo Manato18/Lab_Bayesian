@@ -22,7 +22,7 @@ import socket
 import sys
 
 # 既存のモジュールをインポート
-import config
+from bayes_code import config
 
 
 class RobotSimulator:
