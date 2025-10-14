@@ -20,6 +20,8 @@ import time
 import json
 import socket
 import sys
+import os
+import base64
 
 # 既存のモジュールをインポート
 from bayes_code import config
@@ -43,40 +45,53 @@ class RobotSimulator:
         self.control_pc_addr = (control_pc_host, control_pc_port)
 
         print("=" * 60)
-        print("ロボットシミュレータを初期化しました（固定データ版）")
+        print("ロボットシミュレータを初期化しました")
         print("=" * 60)
 
-    def get_fixed_detections(self, step):
+    def load_data_multi_file(self, step):
         """
-        固定の物体定位データを返す（テスト用）
-
-        実機では、超音波センサーから取得するデータ
+        指定されたステップの _data_Multi.dat ファイルを読み込む
 
         Args:
-            step (int): ステップ番号
+            step (int): ステップ番号（1から開始）
 
         Returns:
-            list: [{'distance': float, 'angle': float}, ...]
-                  distance: 物体までの距離 [mm]
-                  angle: 物体の角度 [度] (-180 ~ 180)
+            dict: {'file_path': str, 'content_base64': str} or None (ファイルが存在しない場合)
         """
-        # 固定のテストデータ
-        # ステップごとに少しずつ変化させる（シミュレーション的に）
-        base_detections = [
-            {"distance": 1500.0 + step * 10, "angle": 15.0},
-            {"distance": 2300.0 + step * 15, "angle": -22.0},
-            {"distance": 1800.0 + step * 12, "angle": 5.0},
-        ]
+        # ステップ番号は1から始まるが、ファイル名は0000から始まる
+        file_index = step - 1
+        file_name = f"{file_index:04d}_data_Multi.dat"
+        file_path = os.path.join("robot_data", "wall_000", "goldorak", str(file_index), file_name)
 
-        return base_detections
+        if not os.path.exists(file_path):
+            print(f"    警告: ファイルが見つかりません: {file_path}")
+            return None
 
-    def request_to_control_pc(self, step, detections):
+        try:
+            # ファイルをバイナリモードで読み込み
+            with open(file_path, 'rb') as f:
+                content_bytes = f.read()
+
+            # Base64エンコード（JSON送信のため、特殊文字をエスケープ）
+            # 2MBのファイルでも安全にJSON文字列として送信可能
+            content_base64 = base64.b64encode(content_bytes).decode('ascii')
+
+            print(f"    ファイル読み込み成功: {file_path} ({len(content_bytes)} bytes → {len(content_base64)} bytes Base64)")
+            return {
+                'file_path': file_path,
+                'content_base64': content_base64
+            }
+        except Exception as e:
+            print(f"    エラー: ファイル読み込み失敗: {file_path}, {e}")
+            return None
+
+    def request_to_control_pc(self, step, data_multi_file=None):
         """
         制御PCに問い合わせて移動指令を受信
 
         Args:
             step (int): ステップ番号
-            detections (list): 物体定位結果
+            data_multi_file (dict): {'file_path': str, 'content_base64': str} or None
 
         Returns:
             dict: 移動指令 {'avoidance_direction', 'move_distance', 'pulse_direction'}
@@ -86,13 +101,26 @@ class RobotSimulator:
             sock.settimeout(30.0)  # 30秒のタイムアウト
             sock.connect(self.control_pc_addr)
 
-            # 送信データ：ステップ番号と物体定位結果のみ
+            # 送信データ：ステップ番号、ファイルデータ（Base64エンコード済み）
             request = {
                 'step': step,
-                'detections': detections
+                'data_multi_file': data_multi_file  # None または {'file_path': str, 'content_base64': str}
             }
 
-            sock.send(json.dumps(request).encode())
+            # JSONをバイト列に変換
+            request_json = json.dumps(request)
+            request_bytes = request_json.encode('utf-8')
+
+            # 【大容量データ送信プロトコル】
+            # 1. データサイズを先に送信（4バイト、ビッグエンディアン）
+            #    受信側がデータ全体を受信するまでループできるようにする
+            data_size = len(request_bytes)
+            sock.sendall(data_size.to_bytes(4, byteorder='big'))
+
+            # 2. 実際のJSONデータを送信（sendallで確実に全送信）
+            sock.sendall(request_bytes)
+
+            print(f"    データ送信完了: {data_size} bytes")
 
             # 受信：回避方向、移動距離、パルス方向
             response = sock.recv(4096).decode()
@@ -126,24 +154,21 @@ class RobotSimulator:
             for step in range(1, max_steps + 1):  # ステップ1から開始
                 print(f"\n--- ステップ {step} ---")
 
-                # 1. 固定の物体定位データを取得
-                print("[1] 物体定位中...")
-                detections = self.get_fixed_detections(step)
-                print(f"    {len(detections)}個の障害物を検出（固定データ）")
-                for det in detections:
-                    print(f"      距離={det['distance']:.1f}mm, 角度={det['angle']:.1f}度")
+                # 1. _data_Multi.dat ファイルを読み込む
+                print("[1] _data_Multi.dat ファイル読み込み中...")
+                data_multi_file = self.load_data_multi_file(step)
 
                 # 2. 制御PCに送信して指令を待つ
                 print("[2] 制御PCに問い合わせ中...")
-                response = self.request_to_control_pc(step, detections)
+                response = self.request_to_control_pc(step, data_multi_file)
 
                 if response.get('status') == 'ok':
                     command = response['command']
                     print(f"    指令受信: 回避={command['avoidance_direction']:.1f}°, "
                           f"移動={command['move_distance']:.1f}mm, パルス={command['pulse_direction']:.1f}°")
-                    
+
                     # 3. 移動実行（1秒）
-                    print("[3] 移動中...")
+                    print("  [3] 移動中...")
                     time.sleep(1.0)
                     print("    移動完了")
                 else:

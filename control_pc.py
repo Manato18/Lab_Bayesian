@@ -16,6 +16,8 @@ Control PC - 制御PC
 import socket
 import json
 import numpy as np
+import os
+import base64
 from bayes_code import config
 from bayes_code.world import World
 from bayes_code.bayesian import Bayesian
@@ -99,6 +101,11 @@ class ControlPC:
         self.bayesian.Init(self.world, self.agent)
         print("✓ Bayesian事後分布初期化完了")
 
+        # ファイル保存先ディレクトリの作成
+        self.save_dir = os.path.join("bayse_olddata2", "output", "robot_data")
+        os.makedirs(self.save_dir, exist_ok=True)
+        print(f"✓ ファイル保存先ディレクトリ: {self.save_dir}")
+
         print("=" * 60)
         print("制御PC初期化完了")
         print("=" * 60)
@@ -155,6 +162,43 @@ class ControlPC:
 
         except Exception as e:
             print(f"✗ env_serverへの位置更新エラー: {e}")
+            return False
+
+    def save_data_multi_file(self, step, file_path, content_base64):
+        """
+        受信した _data_Multi.dat ファイルを保存
+
+        Args:
+            step (int): ステップ番号
+            file_path (str): 元のファイルパス（例: robot_data/wall_000/goldorak/0/0000_data_Multi.dat）
+            content_base64 (str): Base64エンコードされたファイル内容
+
+        Returns:
+            bool: 成功/失敗
+        """
+        try:
+            # Base64デコード（送信時にエンコードされたデータを元に戻す）
+            content_bytes = base64.b64decode(content_base64)
+
+            # ファイル名を取得（例: 0000_data_Multi.dat）
+            file_name = os.path.basename(file_path)
+
+            # 保存先ディレクトリにステップ番号のサブディレクトリを作成
+            step_dir = os.path.join(self.save_dir, f"step_{step:04d}")
+            os.makedirs(step_dir, exist_ok=True)
+
+            # 保存先のフルパス
+            save_path = os.path.join(step_dir, file_name)
+
+            # ファイルを保存（バイナリモード）
+            with open(save_path, 'wb') as f:
+                f.write(content_bytes)
+
+            print(f"  ✓ ファイル保存完了: {save_path} ({len(content_bytes)} bytes)")
+            return True
+
+        except Exception as e:
+            print(f"  ✗ ファイル保存エラー: {e}")
             return False
 
     def calculate_movement(self, step, current_position, detections):
@@ -310,18 +354,24 @@ class ControlPC:
         """
         try:
             step = request['step']
-            detections = request['detections']
+            data_multi_file = request.get('data_multi_file')  # None または {'file_path': str, 'content_base64': str}
 
             print(f"\nステップ{step}: ロボットから要求受信")
-            print(f"  検出: {len(detections)}個")
+
+            # _data_Multi.dat ファイルが送信されている場合は保存
+            if data_multi_file is not None:
+                print(f"  _data_Multi.dat ファイル受信: {data_multi_file['file_path']}")
+                self.save_data_multi_file(step, data_multi_file['file_path'], data_multi_file['content_base64'])
+            else:
+                print("  _data_Multi.dat ファイルなし（ファイルが見つからなかった可能性あり）")
 
             # env_serverから現在位置を取得
             print("  env_serverから現在位置を取得中...")
             current_position = self.get_robot_position_from_env_server()
             print(f"  現在位置: ({current_position['x']:.3f}, {current_position['y']:.3f})")
 
-            # 移動指令を計算
-            command, new_position = self.calculate_movement(step, current_position, detections)
+            # 移動指令を計算（detectionsは空リストを渡す）
+            command, new_position = self.calculate_movement(step, current_position, [])
 
             # env_serverに新しい位置を更新
             print("  env_serverに新しい位置を更新中...")
@@ -363,8 +413,30 @@ class ControlPC:
                 print(f"\n[接続受信] robot_simulator から接続 ({addr[0]}:{addr[1]})")
 
                 try:
-                    # データを受信
-                    data = conn.recv(8192).decode()
+                    # 【大容量データ受信プロトコル】
+                    # 1. データサイズを先に受信（4バイト、ビッグエンディアン）
+                    size_bytes = conn.recv(4)
+                    if len(size_bytes) < 4:
+                        raise ValueError("データサイズを受信できませんでした")
+
+                    data_size = int.from_bytes(size_bytes, byteorder='big')
+                    print(f"  受信予定データサイズ: {data_size} bytes")
+
+                    # 2. 実際のデータを受信（サイズ分を確実に受信）
+                    #    2MBのデータでもrecv()は一度に全て受信できないため、ループで受信
+                    data_bytes = b''
+                    remaining = data_size
+                    while remaining > 0:
+                        chunk = conn.recv(min(remaining, 65536))  # 64KBずつ受信
+                        if not chunk:
+                            raise ValueError("データ受信が途中で終了しました")
+                        data_bytes += chunk
+                        remaining -= len(chunk)
+
+                    print(f"  データ受信完了: {len(data_bytes)} bytes")
+
+                    # 3. JSONデコード
+                    data = data_bytes.decode('utf-8')
                     request = json.loads(data)
 
                     # 要求を処理
