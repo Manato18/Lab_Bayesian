@@ -141,7 +141,7 @@ class Agent:
         new_fd = self.normalize_angle_deg(fd -avoid_angle)
         new_pd = self.normalize_angle_deg(pd -(avoid_angle))
         if self.step_idx >= 6:
-            new_pd = self.normalize_angle_deg(fd -(avoid_angle*2))
+            new_pd = self.normalize_angle_deg(fd -(avoid_angle*1.3))
         print(f"{fd}度から{-avoid_angle}度があって{new_fd}度へ移動")
         print(f"pd: {-fd -(avoid_angle*3/2)}度があって{new_pd}度")
 
@@ -190,7 +190,7 @@ class Agent:
         new_fd = self.normalize_angle_deg(current_position['fd'] - avoid_angle)
         new_pd = self.normalize_angle_deg(current_position['pd'] - avoid_angle)
         if step >= 6:
-            new_pd = self.normalize_angle_deg(current_position['fd'] - (avoid_angle * 2))
+            new_pd = self.normalize_angle_deg(current_position['fd'] - (avoid_angle * 1.3))
         
         # 移動距離を決定
         if flag:

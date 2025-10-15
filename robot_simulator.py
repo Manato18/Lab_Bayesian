@@ -33,7 +33,7 @@ class RobotSimulator:
     制御PCとだけ通信する
     """
 
-    def __init__(self, control_pc_host='localhost', control_pc_port=5001):
+    def __init__(self, control_pc_host='localhost', control_pc_port=6001):
         """
         ロボットシミュレータの初期化
 
@@ -205,5 +205,5 @@ if __name__ == "__main__":
         except ValueError:
             print("デフォルト: 20ステップ\n")
 
-    robot = RobotSimulator(control_pc_host='localhost', control_pc_port=5001)
+    robot = RobotSimulator(control_pc_host='localhost', control_pc_port=6001)
     robot.run(max_steps=max_steps)

@@ -22,7 +22,7 @@ class EnvServer:
     ロボットの位置と障害物情報を管理する
     """
 
-    def __init__(self, host='localhost', port=5000):
+    def __init__(self, host='localhost', port=6000):
         """
         環境情報サーバーの初期化
 
@@ -162,5 +162,5 @@ if __name__ == "__main__":
 ╚══════════════════════════════════════════════════════════╝
     """)
 
-    server = EnvServer(host='localhost', port=5000)
+    server = EnvServer(host='localhost', port=6000)
     server.run()

@@ -117,7 +117,7 @@ class BatVisualizer:
         pulse_length = np.sqrt(pulse_dir_x**2 + pulse_dir_y**2)
         pulse_dir_x_short = bat_x + (pulse_dir_x / pulse_length) * (pulse_length / 3)
         pulse_dir_y_short = bat_y + (pulse_dir_y / pulse_length) * (pulse_length / 3)
-        pd = ax.plot(np.array([bat_x, pulse_dir_x_short]), np.array([bat_y, pulse_dir_y_short]), 'k-', markersize=5, label="pd")[0]
+        pd = ax.plot(np.array([bat_x, pulse_dir_x_short]), np.array([bat_y, pulse_dir_y_short]), 'y-', markersize=5, label="pd")[0]
 
         # 壁のプロット
         wall = ax.plot(self.wall_x_draw, self.wall_y_draw, 'k-', linewidth=2, label="wall")[0]
