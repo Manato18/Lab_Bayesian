@@ -63,13 +63,13 @@ eps_y = 1e-20         # エコー信号の背景レベル（微小値）
 # 空間パラメータ (Spatial Parameters)
 # ========================================
 
-x_max = 8.5           # シミュレーション空間の最大x座標 [m]
+x_max = 4.5           # シミュレーション空間の最大x座標 [m]
                       # 使用: main.py, world.py
 
-y_max = 8.5           # シミュレーション空間の最大y座標 [m]
+y_max = 4.5           # シミュレーション空間の最大y座標 [m]
                       # 使用: bayesian.py, main.py, world.py
 
-margin_space = 2      # 境界マージン空間 [m]
+margin_space = 0.5      # 境界マージン空間 [m]
                       # 使用: bayesian.py, main.py, world.py
 
 Mx = My = int(np.round(y_max / h))       # 空間格子点数
@@ -106,7 +106,7 @@ trials = 20           # 試行回数
 # x, y: 初期座標 [m]
 # fd: 飛行方向（度数法）
 # pd: パルス発射方向（度数法）
-init_pos = [2.5, 6.05, 270, 270]
+init_pos = [2.5, 2.5, 270, 270]
                       # 使用: main.py, agent.py
 
 # ========================================

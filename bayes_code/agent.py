@@ -194,9 +194,9 @@ class Agent:
         
         # 移動距離を決定
         if flag:
-            move_distance = 150.0  # mm
+            move_distance = 500.0  # mm (通常移動: 0.5m)
         else:
-            move_distance = 50.0  # mm
+            move_distance = 100.0  # mm (緊急回避: 0.1m)
         
         # 新しい位置を計算
         move_distance_m = move_distance / 1000.0  # mm -> m
@@ -218,20 +218,23 @@ class Agent:
             'pd': float(new_pd)
         }
         
-        print(f"  [移動指令計算] 完了: 回避={avoid_angle:.1f}度, 移動={move_distance:.1f}mm")
+        # 緊急回避フラグ（flagがFalseの場合が緊急回避）
+        emergency_avoidance = not flag
+        
+        print(f"  [移動指令計算] 完了: 回避={avoid_angle:.1f}度, 移動={move_distance:.1f}mm, 緊急回避={emergency_avoidance}")
         print(f"  [移動指令計算] 新位置: ({new_x:.3f}, {new_y:.3f}), fd={new_fd:.1f}度, pd={new_pd:.1f}度")
         
-        return command, new_position
+        return command, new_position, emergency_avoidance
 
     def _analyze_posterior_for_avoidance(self, X_sel, Y_sel, posterior_sel):
         """
         回避のための事後分布分析
-        前方の左右30度までを5度ごとに、1.5mまでの値を0.1mごとに足して
+        前方の左右30度までを5度ごとに、0.7mまでの値を0.05mごとに足して
         それぞれの角度での合計を表示する
         """
         # 角度範囲の設定（左右30度、5度ごと）
         angles = np.arange(-30, 30, 5)  # -30, -25, -20, ..., 25, 30
-        distances = np.arange(0.1, 1.5, 0.1)  # 0.2, ..., 1.5
+        distances = np.arange(0.05, 0.75, 0.05)  # 0.05, 0.10, 0.15, ..., 0.70
         
         # 結果を格納する辞書
         angle_results = {}

@@ -2,7 +2,7 @@ import numpy as np
 import copy
 
 # 設定ファイルから必要なパラメータをインポート
-from bayes_code.config import y_max, margin_space, h, world_wall_pos
+from bayes_code.config import x_max, y_max, margin_space, h, world_wall_pos
 
 class Bayesian:
     def __init__(self, sigma2, min_p, c):
@@ -95,7 +95,7 @@ class Bayesian:
             print(f"NaN count in Px_yn_conf_log_current: {nan_count}")
         
         # 壁の座標を設定
-        wall_x = np.array([margin_space, y_max - margin_space])
+        wall_x = np.array([margin_space, x_max - margin_space])
         wall_y = np.array([margin_space, y_max - margin_space])
         wall_corner_x, wall_corner_y = np.meshgrid(wall_x, wall_y)
         wall_corner_x = wall_corner_x.flatten()
@@ -262,7 +262,7 @@ class Bayesian:
         # world_wall_posはconfig.pyから読み込まれます
         if world_wall_pos:
             # 壁の範囲外を-20に設定
-            wall_x = np.array([margin_space, y_max - margin_space])
+            wall_x = np.array([margin_space, x_max - margin_space])
             wall_y = np.array([margin_space, y_max - margin_space])
             wall_corner_x, wall_corner_y = np.meshgrid(wall_x, wall_y)
             wall_corner_x = wall_corner_x.flatten()

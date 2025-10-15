@@ -24,6 +24,7 @@ from bayes_code.bayesian import Bayesian
 from bayes_code.agent import Agent, Obj
 from bayes_code.calc import r_theta_matrix, real_dist_goback_matrix, dist_attenuation, direc_attenuation, sigmoid, ear_posit, r_theta_to_XY_calc, real_dist_goback, space_echo_translater
 from bayes_code.localization import Localizer
+from bayes_code.robot_visualize import BatVisualizer
 
 
 class ControlPC:
@@ -32,7 +33,7 @@ class ControlPC:
     ベイズ推論と回避計算を担当する
     """
 
-    def __init__(self, host='localhost', port=5001, env_server_host='localhost', env_server_port=5000):
+    def __init__(self, host='localhost', port=6001, env_server_host='localhost', env_server_port=6000):
         """
         制御PCの初期化
 
@@ -103,7 +104,7 @@ class ControlPC:
         print("✓ Bayesian事後分布初期化完了")
 
         # ファイル保存先ディレクトリの作成
-        self.save_dir = os.path.join("bayse_olddata2", "output", "robot_data")
+        self.save_dir = os.path.join(config.folder_name, "output", "robot_data")
         os.makedirs(self.save_dir, exist_ok=True)
         print(f"✓ ファイル保存先ディレクトリ: {self.save_dir}")
 
@@ -115,6 +116,32 @@ class ControlPC:
             threshold=0.15      # ピーク検出閾値
         )
         print("✓ Localizer初期化完了")
+
+        # BatVisualizer初期化（可視化）
+        print("BatVisualizer初期化中...")
+        # ★仮データ★ 壁の座標（ダミー: 正方形の部屋を想定）
+        # TODO: 実際の環境では、env_serverから実際の壁座標を取得する必要があります
+        # 現在は config.x_max, config.y_max で定義される正方形の部屋を想定
+        wall_x = np.array([0, config.x_max, config.x_max, 0])
+        wall_y = np.array([0, 0, config.y_max, config.y_max])
+
+        self.visualizer = BatVisualizer(
+            X=self.world.X,
+            Y=self.world.Y,
+            c_percentile=config.c_percentile,
+            min_p=config.min_p,
+            x_max=config.x_max,
+            y_max=config.y_max,
+            wall_x=wall_x,
+            wall_y=wall_y,
+            show_echo_plots=False  # エコープロット非表示
+        )
+        print("✓ BatVisualizer初期化完了")
+
+        # 可視化用の出力ディレクトリ
+        self.viz_output_dir = os.path.join(config.folder_name, "output", "visualization")
+        os.makedirs(self.viz_output_dir, exist_ok=True)
+        print(f"✓ 可視化出力ディレクトリ: {self.viz_output_dir}")
 
         print("=" * 60)
         print("制御PC初期化完了")
@@ -325,43 +352,126 @@ class ControlPC:
 
         print(f"  [事後分布計算] 空間行列計算完了")
 
-        # ベイズ更新
+        # ベイズ更新（戻り値を受け取る）
         print(f"  [事後分布計算] ベイズ更新を実行中...")
-        self.bayesian.update_belief(
+        data1, data2, data3, data4 = self.bayesian.update_belief(
             step, y_el, y_er,
             current_obs_goback_dist_matrix_L,
             current_obs_goback_dist_matrix_R,
             current_confidence_matrix
         )
         print(f"  [事後分布計算] ベイズ更新完了")
+        
+        # エコーベクトルの作成（可視化用）
+        y_el_vec = np.ones(len(self.world.t_ax)) * config.eps_y
+        y_er_vec = np.ones(len(self.world.t_ax)) * config.eps_y
+        
+        if len(detections) > 0 and len(y_el[0]) > 0:
+            for tl, tr in zip(y_el[0], y_er[0]):
+                time_idx_L = np.argmin(np.abs(self.world.t_ax - tl))
+                time_idx_R = np.argmin(np.abs(self.world.t_ax - tr))
+                y_el_vec[time_idx_L] = 1.0
+                y_er_vec[time_idx_R] = 1.0
+        
+        # 観測点の座標を計算
+        if len(detections) > 0:
+            # obs_x, obs_yはすでに計算済み（行286-290）
+            obs_x_mean = np.mean(obs_x) if obs_x.size > 0 else current_position['x']
+            obs_y_mean = np.mean(obs_y) if obs_y.size > 0 else current_position['y']
+        else:
+            # 検出がない場合はロボット位置を使用
+            obs_x_mean = current_position['x']
+            obs_y_mean = current_position['y']
+        
+        # 可視化に必要なデータを返す
+        return {
+            'data1': data1,
+            'data2': data2,
+            'data3': data3,
+            'data4': data4,
+            'y_el_vec': y_el_vec,
+            'y_er_vec': y_er_vec,
+            'obs_x': obs_x_mean,
+            'obs_y': obs_y_mean
+        }
 
     def calculate_movement_command(self, step, current_position):
         """
         更新された事後分布から移動指令を計算
-        
+
         このメソッドは、ベイズ推論で更新された事後確率分布を解析して、
         ロボットの回避方向と移動距離を決定します。
-        
+
         実装はAgentクラスのcalculate_avoidance_commandメソッドに委譲されています。
         これにより、コードの重複を削減し、保守性を向上させています。
-        
+
         Args:
             step (int): ステップ番号
             current_position (dict): 現在位置 {'x': float, 'y': float, 'fd': float, 'pd': float}
-        
+
         Returns:
-            tuple: (command, new_position)
+            tuple: (command, new_position, emergency_avoidance)
                 - command (dict): 移動指令 {'avoidance_direction', 'move_distance', 'pulse_direction'}
                 - new_position (dict): 新しい位置 {'x', 'y', 'fd', 'pd'}
+                - emergency_avoidance (bool): 緊急回避フラグ
         """
         print(f"  [移動指令計算] 事後分布から回避方向を計算中...")
-        
+
         # Agentクラスのメソッドに処理を委譲
-        command, new_position = self.agent.calculate_avoidance_command(
+        command, new_position, emergency_avoidance = self.agent.calculate_avoidance_command(
             current_position, step
         )
-        
-        return command, new_position
+
+        return command, new_position, emergency_avoidance
+
+    def plot_current_state(self, step, current_position, posterior_data, emergency_avoidance=False):
+        """
+        現在の状態を可視化して画像として保存
+
+        Args:
+            step (int): ステップ番号
+            current_position (dict): 現在位置 {'x': float, 'y': float, 'fd': float, 'pd': float}
+            posterior_data (dict): 事後分布計算結果
+                - data1, data2, data3, data4: ベイズ推論データ
+                - y_el_vec, y_er_vec: エコーベクトル
+                - obs_x, obs_y: 観測点座標
+
+        Returns:
+            str: 保存した画像のパス（失敗時はNone）
+        """
+        print(f"  [可視化] ステップ{step}の状態を可視化中...")
+
+        try:
+            # plot_single_step()を呼び出して可視化
+            image_path = self.visualizer.plot_single_step(
+                step_idx=step,
+                bat_x=current_position['x'],
+                bat_y=current_position['y'],
+                fd=current_position['fd'],
+                pd=current_position['pd'],
+                pole_x=self.world.pole_x,
+                pole_y=self.world.pole_y,
+                obs_x=posterior_data['obs_x'],
+                obs_y=posterior_data['obs_y'],
+                data1=posterior_data['data1'],
+                data2=posterior_data['data2'],
+                data3=posterior_data['data3'],
+                data4=posterior_data['data4'],
+                t_ax=self.world.t_ax,
+                y_el_vec=posterior_data['y_el_vec'],
+                y_er_vec=posterior_data['y_er_vec'],
+                output_dir=self.viz_output_dir,
+                emergency_avoidance=emergency_avoidance
+            )
+            
+            print(f"  ✓ 可視化完了: {image_path}")
+            return image_path
+            
+        except Exception as e:
+            print(f"  ✗ 可視化エラー: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     def handle_request(self, request):
         """
@@ -407,11 +517,11 @@ class ControlPC:
             current_position = self.get_robot_position_from_env_server()
             print(f"  現在位置: ({current_position['x']:.3f}, {current_position['y']:.3f})")
 
-            # 事後分布を計算・更新（ベイズ定位点導入.pyと同じフロー）
-            self.calculate_posterior_from_detections(step, current_position, detections)
+            # 事後分布を計算・更新（戻り値を受け取る）
+            posterior_data = self.calculate_posterior_from_detections(step, current_position, detections)
 
             # 移動指令を計算
-            command, new_position = self.calculate_movement_command(step, current_position)
+            command, new_position, emergency_avoidance = self.calculate_movement_command(step, current_position)
 
             # env_serverに新しい位置を更新
             print("  env_serverに新しい位置を更新中...")
@@ -420,6 +530,9 @@ class ControlPC:
                 print("  ✓ 位置更新完了")
             else:
                 print("  ✗ 位置更新失敗")
+
+            # 現在の状態を可視化
+            self.plot_current_state(step, current_position, posterior_data, emergency_avoidance)
 
             return {
                 'status': 'ok',
@@ -521,8 +634,8 @@ if __name__ == "__main__":
 
     control_pc = ControlPC(
         host='localhost',
-        port=5001,
+        port=6001,
         env_server_host='localhost',
-        env_server_port=5000
+        env_server_port=6000
     )
     control_pc.run()
