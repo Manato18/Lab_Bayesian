@@ -5,9 +5,10 @@
 OptiTrack マーカートラッキング＆HTTP提供ツール（サーバ／プリント表示）
 
 概要:
-- Motive（NatNet）からマーカー座標を受信し、以下の2モードで利用できます。
+- Motive（NatNet）からマーカー座標を受信し、以下の3モードで利用できます。
   1) プリント表示: 取得フレームの概要・内容を一定間隔でコンソール出力
   2) HTTPサーバ: 最新スナップショットを `GET /latest`、特定マーカーセットを `GET /marker_set?name=...` で返却
+  3) テストモード: NatNet接続なしでダミーデータをHTTP提供（開発・テスト用）
 
 前提:
 - Motive 側でストリーミングが有効
@@ -23,12 +24,16 @@ OptiTrack マーカートラッキング＆HTTP提供ツール（サーバ／プ
 - プリント表示（一定間隔で概要を出力）
     python robot_bayse/marker_tracker.py --server-ip <Motive_IP> --client-ip <THIS_PC_IP> --mode print [--interval 1.0]
 
+- テストモード（ダミーデータをHTTP提供、Motive接続不要）
+    python robot_bayse/marker_tracker.py --mode test [--port 6000]
+
 引数の要点:
 - --server-ip / --client-ip は省略可（未指定は localhost）。
   解決順: 引数 > 環境変数(NATNET_SERVER_IP / NATNET_CLIENT_IP) > "localhost"
-- --mode: server | print（既定: server）
+- --mode: server | print | test（既定: server）
 - --port: HTTPポート（既定: 6000）
 - --multicast: マルチキャスト接続を有効化（既定はユニキャスト）
+- --interval: プリントモード時の出力間隔（秒、既定: 1.0）
 
 返却データ（/latest の snapshot 構造）:
 {
@@ -45,6 +50,7 @@ OptiTrack マーカートラッキング＆HTTP提供ツール（サーバ／プ
 - Ctrl+C で HTTP と NatNet 受信スレッドを安全停止（完全に出力が止まります）。
 - ライブラリの冗長ログは `print_level=0` により抑制済み。
 - マーカーセット名が bytes で届く場合はUTF-8/CP932で文字列化して返却。
+- テストモードでは Motive への接続は行わず、リアルな動きを模したダミーデータを120 FPS相当で生成します。
 
 トラブルシューティング:
 - JSON化エラー（bytes が混入）: 対策済み。発生時は /latest が 500 を返し、サーバは継続。
@@ -111,6 +117,7 @@ class SimpleMarkerTracker:
         self._latest_snapshot = None
         self._http_server = None
         self._http_thread = None
+        self._test_thread = None  # テストモード用データ更新スレッド
 
         # NatNetクライアント作成
         self.natnet_client = NatNetClient()
@@ -330,6 +337,93 @@ class SimpleMarkerTracker:
         with self._snapshot_lock:
             return None if self._latest_snapshot is None else copy.deepcopy(self._latest_snapshot)
 
+    def generate_test_snapshot(self, frame_number):
+        """テストモード用のダミースナップショットを生成"""
+        import math
+
+        ts = time.time()
+        # 周期的な動きをシミュレート（10秒周期）
+        t = ts % 10.0
+        offset_x = 0.02 * math.sin(2 * math.pi * t / 10.0)
+        offset_y = 0.01 * math.cos(2 * math.pi * t / 10.0)
+        offset_z = 0.015 * math.sin(2 * math.pi * t / 5.0)
+
+        # robot_head マーカーセット（3個のマーカー）
+        robot_head_markers = [
+            [1.617 + offset_x, 0.197 + offset_y, 0.903 + offset_z],
+            [1.638 + offset_x, 0.192 + offset_y, 0.905 + offset_z],
+            [1.598 + offset_x, 0.192 + offset_y, 0.898 + offset_z],
+        ]
+
+        # その他のマーカー（legacy_other_markers用）
+        other_markers = [
+            [1.636 + offset_x * 0.5, 0.273 + offset_y * 0.8, 0.825 + offset_z * 0.6],
+            [2.016 + offset_x * 0.7, -0.032 + offset_y * 0.9, 0.888 + offset_z * 0.7],
+            [1.985 + offset_x * 0.6, -0.009 + offset_y * 0.85, 0.760 + offset_z * 0.5],
+        ]
+
+        result = {
+            "timestamp": ts,
+            "frame": frame_number,
+            # ラベル付きマーカー（robot_head の3個 + その他3個）
+            "labeled_markers": [
+                {"id": 65537, "pos": robot_head_markers[0]},
+                {"id": 65538, "pos": robot_head_markers[1]},
+                {"id": 65539, "pos": robot_head_markers[2]},
+                {"id": 16027, "pos": other_markers[0]},
+                {"id": 16029, "pos": other_markers[1]},
+                {"id": 16454, "pos": other_markers[2]},
+            ],
+            # マーカーセット
+            "marker_sets": [
+                {
+                    "name": "robot_head",
+                    "markers": robot_head_markers,
+                },
+                {
+                    "name": "all",
+                    "markers": robot_head_markers,  # この例では robot_head と同じ
+                },
+            ],
+            # ラベルなしマーカー（テストでは空）
+            "unlabeled_markers": [],
+            # レガシーその他マーカー
+            "legacy_other_markers": other_markers,
+            # 剛体（robot_head の中心位置を計算）
+            "rigid_bodies": [
+                {
+                    "id": 1,
+                    "pos": [
+                        sum(m[0] for m in robot_head_markers) / 3,
+                        sum(m[1] for m in robot_head_markers) / 3,
+                        sum(m[2] for m in robot_head_markers) / 3,
+                    ],
+                    "tracking_valid": True,
+                }
+            ],
+        }
+
+        return result
+
+    def update_test_data(self):
+        """テストモード用：バックグラウンドでスナップショットを更新し続ける"""
+        frame_number = 0
+        # 120 FPS 相当でリアルタイム感を再現
+        update_interval = 1.0 / 120.0
+
+        print("テストデータ生成開始（120 FPS相当）...")
+        try:
+            while True:
+                frame_number += 1
+                snapshot = self.generate_test_snapshot(frame_number)
+
+                with self._snapshot_lock:
+                    self._latest_snapshot = snapshot
+
+                time.sleep(update_interval)
+        except Exception as e:
+            print(f"テストデータ更新中にエラー: {e}")
+
     def serve_latest_http(self):
         """HTTPサーバを起動し、/latest と /marker_set で最新データを返す"""
         tracker = self
@@ -493,6 +587,26 @@ class SimpleMarkerTracker:
                 # メインループ（HTTPは別スレッドで提供、ここでは待機のみ）
                 while True:
                     time.sleep(0.5)
+            elif self.mode == 'test':
+                # テストモード: NatNet接続なし、ダミーデータのみ
+                print("テストモードで起動しています...")
+
+                # HTTPサーバをバックグラウンドで起動
+                print("HTTPサーバを起動しています...")
+                self._http_thread = threading.Thread(target=self.serve_latest_http, daemon=True)
+                self._http_thread.start()
+
+                # テストデータ更新スレッドを起動
+                self._test_thread = threading.Thread(target=self.update_test_data, daemon=True)
+                self._test_thread.start()
+
+                print(f"テストモード起動完了: http://0.0.0.0:{self.server_port}/latest")
+                print("ダミーデータをHTTPで提供します（/latest, /marker_set）")
+                print("停止するには Ctrl+C を押してください")
+
+                # メインループ（HTTPとテストデータ更新は別スレッド）
+                while True:
+                    time.sleep(0.5)
             else:
                 print(f"不明なモードです: {self.mode}")
                 self.safe_shutdown()
@@ -549,7 +663,7 @@ def main():
     parser.add_argument("--client-ip", dest="client_ip", default=None, help="このPCのIPv4。未指定時は 'localhost'")
     parser.add_argument("--multicast", dest="multicast", action="store_true", help="マルチキャストで接続")
     parser.add_argument("--interval", dest="interval", type=float, default=None, help="出力間隔(秒) 例: 0.5")
-    parser.add_argument("--mode", dest="mode", choices=["print", "server"], default="server", help="動作モード: print または server")
+    parser.add_argument("--mode", dest="mode", choices=["print", "server", "test"], default="server", help="動作モード: print, server, または test")
     parser.add_argument("--port", dest="port", type=int, default=6000, help="サーバーモード時のHTTPポート")
     args = parser.parse_args()
 

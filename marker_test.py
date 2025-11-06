@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
+r"""
 マーカーデータ取得テスター（/latest 全件表示／特定モデル抽出）
 
 概要:
