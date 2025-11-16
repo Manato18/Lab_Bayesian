@@ -291,42 +291,65 @@ detections = localizer.localize_from_crosscor(data[0], data[1])
 - `control_pc.py:28, 55-100, 112-128, 206-237, 684-698`: MarkerTrackerClient統合
 - `bayes_code/world.py:183-189`: CSVからの障害物読み込みを無効化
 
-### Phase 2: Localizerの拡張 ⚠️ **未完了**
-- [ ] Localizer.localize_from_crosscor()メソッドを実装
-  - 現在のcontrol_pc.pyは既存のlocalize()メソッドを使用（_data_Multi.datファイルベース）
-  - 実機ロボットからの相互相関データ（[[crosscor_l], [crosscor_r]]）を直接処理する必要がある
-- [ ] 相互相関データから物体定位を行う処理を追加
-  - MIGRATION_PLAN.md:174-176に記載されている処理が未実装
-- [ ] 既存のlocalize()メソッドとの整合性を確認
+### Phase 2: Localizerの拡張 ✅ **完了**
+- [x] Localizer.localize_from_crosscor()メソッドを実装
+  - `bayes_code/localization.py:89-113` で実装完了
+  - 相互相関データ（[[crosscor_l], [crosscor_r]]）を直接処理
+- [x] 相互相関データから物体定位を行う処理を追加
+  - `_localize_from_arrays()` 内部メソッドで処理を共通化（115-163行目）
+- [x] 既存のlocalize()メソッドとの整合性を確認
+  - 既存の`localize(file_path)`は内部で`_localize_from_arrays()`を呼び出す設計に変更
+  - コードの重複を避け、保守性を向上
 
-### Phase 3: bayes_server.pyの実装 ⚠️ **部分的完了**
-- [ ] control_pc.pyをベースに新規作成
-  - bayes_server.pyという名前の独立したファイルはまだ作成されていない
-  - control_pc.pyに機能統合が行われたが、実機ロボット通信には未対応
+### Phase 3: control_pc.pyの拡張（実機ロボット対応） ✅ **完了**
+**設計変更**: bayes_server.pyを新規作成せず、control_pc.pyを拡張する方針に変更
 - [x] marker_trackerからの位置情報取得機能を追加 ✅
-  - `control_pc.py:55-100, 112-128, 206-237, 684-698` で実装完了
-- [ ] 実機ロボット通信プロトコルに対応
-  - MIGRATION_PLAN.md:79-94に記載されているGolangロボットとの通信が未実装
-  - 現在のcontrol_pc.pyはrobot_simulator.pyとの通信のみ（ポート6001）
-  - 実機用のTCPサーバー（ポート60000）への対応が必要
-- [ ] 単位変換（mm↔m、degree↔radian）を実装
-  - MIGRATION_PLAN.md:179-197に記載されている単位変換が未実装
-- [x] エラーハンドリングとログ出力を強化 ✅（部分的）
-  - marker_tracker接続失敗時のフォールバック処理を実装
+  - `control_pc.py:55-100, 112-128, 206-237` で実装完了（Phase 1で完了）
+- [x] 実機ロボット通信プロトコルに対応 ✅
+  - `control_pc.py:669-755` に`handle_real_robot_request()`メソッドを実装
+  - 相互相関データ受信: `[[crosscor_l], [crosscor_r]]`
+  - 実機形式で応答: `{"Time": ISO8601, "NextMove": m, "NextAngle": rad}`
+  - ポート6001で通信（既存のポートを使用）
+- [x] 単位変換（mm↔m、degree↔radian）を実装 ✅
+  - `control_pc.py:649-667` に単位変換メソッドを実装
+    - `_mm_to_m()`, `_m_to_mm()` - 距離変換
+    - `_deg_to_rad()`, `_rad_to_deg()` - 角度変換
+  - `handle_real_robot_request()`内で自動変換
+- [x] run()メソッドを新形式用に変更 ✅
+  - `control_pc.py:840-921` で改行終端のJSON受信に対応
+  - 新形式を自動処理
+- [x] エラーハンドリングとログ出力を強化 ✅
+  - marker_tracker接続失敗時のフォールバック処理
+  - 通信エラー時も適切な形式で応答
 
-**次のステップ:**
-1. bayes_server.pyを新規作成するか、control_pc.pyを実機用に拡張
-2. 実機ロボット通信プロトコル（ポート60000、JSON形式）に対応
-3. 単位変換処理の実装
+**実装ファイル:**
+- `control_pc.py:202-203`: ステップカウンター追加
+- `control_pc.py:649-667`: 単位変換メソッド
+- `control_pc.py:669-755`: `handle_real_robot_request()` メソッド
+- `control_pc.py:840-921`: `run()` メソッド（新形式対応）
+- 既存の`handle_request()`は保持（後方互換性）
 
-### Phase 4: 統合テスト ⚠️ **未完了**
-- [x] marker_tracker.py（testモード）起動 ✅（準備完了）
-- [ ] bayes_server.py起動
-  - bayes_server.pyがまだ作成されていない
-- [ ] ダミークライアントでエコーデータを送信してテスト
-  - 実機ロボットの相互相関データ形式でのテストが必要
-- [ ] 移動指令の正しさを確認
-  - 実機が期待する形式（NextMove[m], NextAngle[rad]）への変換確認
+### Phase 4: 統合テスト ✅ **完了**
+- [x] marker_tracker.py（testモード）起動 ✅
+  - `python marker_tracker.py --mode test --port 6000`
+- [x] control_pc.py起動 ✅
+  - `python control_pc.py`
+  - ポート6001で待機、新形式（相互相関配列）に対応
+- [x] robot_simulator.pyをGolang風に書き換え ✅
+  - `robot_simulator.py` を実機ロボット（Golang）の動作に似せて実装
+  - DoSensing → 通信 → DoSingleMove → CreateCall の流れを再現
+  - 相互相関データ送信: `[[crosscor_l], [crosscor_r]]`
+  - 実機形式の応答受信: `{"Time": str, "NextMove": m, "NextAngle": rad}`
+- [x] 統合テスト実施 ✅（基本動作確認完了）
+  - `python robot_simulator.py 20`
+  - 実行確認済み、エンドツーエンドで動作
+
+**実装ファイル:**
+- `robot_simulator.py`: 全面的に書き換え
+  - `do_sensing()`: _data_Multi.datファイルから相互相関データを読み込み
+  - `send_data_to_server()`: JSON形式で送信、改行終端
+  - `do_single_move()`: 移動シミュレート
+  - `create_call()`: パルス発生シミュレート
 
 ### Phase 5: 実機連携テスト ⚠️ **未完了**
 - [ ] OptiTrackシステムでmarker_tracker.pyを起動
@@ -341,47 +364,64 @@ detections = localizer.localize_from_crosscor(data[0], data[1])
 
 ## 6. 実装状況サマリー
 
-### ✅ 完了した項目
-1. **marker_trackerのtestモード実装** (Phase 1)
+### ✅ 完了した項目（2025-01-16更新）
+
+1. **marker_trackerのtestモード実装** (Phase 1) ✅
    - ダミーデータ生成（robot_body, robot_head, obstacles）
    - HTTPサーバー機能（/latest, /marker_set）
    - 120 FPS相当のリアルタイムデータ更新
 
-2. **marker_tracker_clientの実装** (Phase 1)
+2. **marker_tracker_clientの実装** (Phase 1) ✅
    - HTTPクライアント機能
    - ロボット位置・方向の計算ロジック
    - 障害物データ取得
 
-3. **control_pc.pyへのmarker_tracker統合** (Phase 3 部分)
+3. **control_pc.pyへのmarker_tracker統合** (Phase 1) ✅
    - MarkerTrackerClientの統合
    - 初期化時の位置・障害物データ取得
    - 定期的な位置更新
 
+4. **Localizer.localize_from_crosscor()の実装** (Phase 2) ✅
+   - 実機ロボットから送られる相互相関データを直接処理
+   - `_localize_from_arrays()` 内部メソッドで処理を共通化
+   - 既存の`localize(file_path)`との互換性を維持
+
+5. **control_pc.pyの拡張（実機ロボット対応）** (Phase 3) ✅
+   - `handle_real_robot_request()` メソッド実装
+   - 相互相関データ受信: `[[crosscor_l], [crosscor_r]]`
+   - 単位変換（mm↔m、度↔rad）実装
+   - 実機形式で応答: `{"Time": ISO8601, "NextMove": m, "NextAngle": rad}`
+   - 既存の`handle_request()`は保持（後方互換性）
+
+6. **robot_simulator.pyのGolang風書き換え** (Phase 4) ✅
+   - DoSensing → 通信 → DoSingleMove → CreateCall の流れを再現
+   - 相互相関データ送信プロトコル実装
+   - 実機形式の応答受信
+
+7. **統合テスト** (Phase 4) ✅（基本動作確認完了）
+   - marker_tracker (test mode) + control_pc + robot_simulator
+   - エンドツーエンドで動作確認済み
+
 ### ⚠️ 未完了・残課題
 
 #### 高優先度（実機連携に必須）
-1. **Localizer.localize_from_crosscor()の実装** (Phase 2)
-   - 実機ロボットから送られる相互相関データを直接処理
-   - 現在はファイルベース（_data_Multi.dat）のみ対応
+1. **実機モードでのmarker_tracker動作確認** (Phase 5)
+   - OptiTrackシステムとの接続
+   - Motive側のマーカーセット設定（robot_body, robot_head, obstacles）
 
-2. **bayes_server.pyの作成** (Phase 3)
-   - 実機ロボット通信プロトコル（ポート60000）への対応
-   - JSON形式での相互相関データ受信
-   - 移動指令の単位変換（mm→m、度→rad）
-
-3. **統合テスト環境の構築** (Phase 4)
-   - ダミークライアントの作成
-   - エンドツーエンドテストの実施
+2. **実機ロボット（Golang）との接続テスト** (Phase 5)
+   - 現在はrobot_simulator.py（Python）でのテストのみ
+   - 実際のGolangロボットとの通信確認が必要
 
 #### 中優先度（動作確認・改善）
-4. **実機モードでのmarker_tracker動作確認** (Phase 5)
-   - OptiTrackシステムとの接続
-   - Motive側のマーカーセット設定
-
-5. **エラーハンドリングの強化**
-   - マーカーが見えない場合の処理
-   - 通信エラー時のフォールバック
+3. **エラーハンドリングの強化**
+   - マーカーが見えない場合の処理（一部実装済み）
+   - 通信エラー時のフォールバック（一部実装済み）
    - ロボットの安全停止機構
+
+4. **パフォーマンス最適化**
+   - 大容量データ（30000サンプル）の効率的な処理
+   - 可視化の高速化
 
 ---
 
@@ -442,37 +482,86 @@ python bayes_server.py --marker-tracker localhost:6000
 
 ## 9. まとめ
 
-### 現在の状況（2025-01-16時点）
-✅ **Phase 1完了:**
+### 現在の状況（2025-01-16更新）
+✅ **Phase 1-4完了:**
 - marker_tracker.pyのtestモード実装完了
 - marker_tracker_client.pyの作成完了
 - control_pc.pyへのmarker_tracker統合完了
-- ステージ1（marker_tracker（test）+ control_pc + robot_simulator）動作確認済み
+- Localizer.localize_from_crosscor()の実装完了
+- control_pc.pyの実機ロボット対応完了（単位変換含む）
+- robot_simulator.pyのGolang風書き換え完了
+- 統合テスト完了（基本動作確認）
 
-⚠️ **Phase 2-5未完了:**
-- Localizer.localize_from_crosscor()の実装が必要
-- bayes_server.pyの作成が必要
-- 実機ロボット通信プロトコルへの対応が必要
+⚠️ **Phase 5未完了:**
+- 実機モードでのmarker_tracker動作確認が必要
+- 実機ロボット（Golang）との接続テストが必要
 
-### 目標
+### 目標達成状況
 - ✅ OptiTrackから位置情報を取得（testモードで達成）
-- ⚠️ シミュレーション環境を実機環境に移行（進行中）
-- ⚠️ 実機ロボットとベイズ推論サーバーを接続（未完了）
+- ✅ シミュレーション環境を実機環境に移行（**完了**）
+- ⚠️ 実機ロボットとベイズ推論サーバーを接続（**テスト準備完了、実機テスト未実施**）
+
+### システム構成（現在）
+```
+┌─────────────────────────┐
+│ marker_tracker.py       │ OptiTrack位置情報
+│ (test mode: port 6000)  │ - robot_body, robot_head, obstacles
+└───────────┬─────────────┘
+            │ HTTP GET
+            ▼
+┌─────────────────────────┐      ┌─────────────────────────┐
+│ control_pc.py           │◄────►│ robot_simulator.py      │
+│ (TCP: port 6001)        │      │ (Golang風)              │
+│                         │      │                         │
+│ - 位置取得              │      │ - DoSensing             │
+│ - 物体定位（新実装）    │      │ - [[crosscor_l],        │
+│ - ベイズ推論            │      │   [crosscor_r]] 送信    │
+│ - 回避計算              │      │ - DoSingleMove          │
+│ - 単位変換（新実装）    │      │ - CreateCall            │
+│ - 可視化                │      │                         │
+└─────────────────────────┘      └─────────────────────────┘
+```
 
 ### 次のアクション（優先順位順）
-1. **Localizer.localize_from_crosscor()の実装** (Phase 2)
-   - 相互相関データから物体定位を行う処理を追加
-   - 実機ロボットのデータ形式に対応
-
-2. **bayes_server.pyの新規作成** (Phase 3)
-   - control_pc.pyをベースに実機ロボット通信に対応
-   - ポート60000でTCPサーバーを起動
-   - 移動指令の単位変換を実装
-
-3. **ダミークライアントの作成** (Phase 4)
-   - 実機ロボットの代わりにテストデータを送信
-   - 統合テストを実施
-
-4. **実機モードでのmarker_tracker動作確認** (Phase 5)
+1. **実機モードでのmarker_tracker動作確認** (Phase 5)
    - OptiTrackシステムとの接続
-   - Motive側のマーカーセット設定
+   - Motive側のマーカーセット設定（robot_body, robot_head, obstacles）
+   - `python marker_tracker.py --mode server --server-ip <Motive_IP> --client-ip <THIS_PC_IP> --port 6000`
+
+2. **実機ロボット（Golang）との接続テスト** (Phase 5)
+   - Golangロボットをcontrol_pc.pyに接続
+   - エンドツーエンドでの動作確認
+   - データ形式・単位変換の確認
+
+3. **エラーハンドリングの強化**
+   - マーカーが見えない場合の安全処理
+   - 通信断時のフォールバック
+   - ロボットの安全停止機構
+
+4. **パフォーマンス最適化**
+   - 大容量データ処理の効率化
+   - 可視化の高速化
+
+### 起動手順（現在）
+```bash
+# 1. marker_trackerをtestモードで起動
+python marker_tracker.py --mode test --port 6000
+
+# 2. control_pcを起動
+python control_pc.py
+
+# 3. robot_simulatorを起動
+python robot_simulator.py 20  # 20ステップ実行
+```
+
+### 実機連携時の起動手順（Phase 5）
+```bash
+# 1. marker_trackerを実機モードで起動
+python marker_tracker.py --mode server --server-ip <Motive_IP> --client-ip <THIS_PC_IP> --port 6000
+
+# 2. control_pcを起動
+python control_pc.py
+
+# 3. 実機ロボット（Golang）を起動
+# （Golangロボット側で実行）
+```

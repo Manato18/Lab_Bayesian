@@ -199,8 +199,12 @@ class ControlPC:
         self.plot_initial_state()
         print("✓ 初期状態の可視化完了")
 
+        # ステップカウンター（実機ロボット用）
+        self.step_counter = 0
+
         print("=" * 60)
         print("制御PC初期化完了")
+        print("  ※ 新形式（相互相関配列）に対応")
         print("=" * 60)
 
     def get_robot_position_from_marker_tracker(self, body_marker_set='robot_body',
@@ -642,6 +646,117 @@ class ControlPC:
             traceback.print_exc()
             return None
 
+    @staticmethod
+    def _mm_to_m(mm_value):
+        """mm → m 変換"""
+        return mm_value / 1000.0
+
+    @staticmethod
+    def _m_to_mm(m_value):
+        """m → mm 変換"""
+        return m_value * 1000.0
+
+    @staticmethod
+    def _deg_to_rad(deg_value):
+        """度 → ラジアン 変換"""
+        return np.radians(deg_value)
+
+    @staticmethod
+    def _rad_to_deg(rad_value):
+        """ラジアン → 度 変換"""
+        return np.degrees(rad_value)
+
+    def handle_real_robot_request(self, crosscor_l, crosscor_r):
+        """
+        新形式の要求を処理（実機ロボット用）
+
+        Args:
+            crosscor_l (list): 左耳の相互相関データ
+            crosscor_r (list): 右耳の相互相関データ
+
+        Returns:
+            dict: 応答（実機ロボット形式）
+                {'Time': str, 'NextMove': float (m), 'NextAngle': float (rad)}
+        """
+        try:
+            # ステップカウンターをインクリメント
+            self.step_counter += 1
+            step = self.step_counter
+
+            print(f"\nステップ{step}: 実機ロボットから要求受信")
+            print(f"  相互相関データ: L={len(crosscor_l)} samples, R={len(crosscor_r)} samples")
+
+            # 物体定位を実行（新メソッド）
+            print("  [定位計算] 物体定位を実行中...")
+            detections = self.localizer.localize_from_crosscor(crosscor_l, crosscor_r)
+
+            if len(detections) > 0:
+                print(f"  [定位計算] {len(detections)}個の物体を検出しました")
+                for idx, det in enumerate(detections):
+                    print(f"    物体{idx+1}: 距離={det['distance']:.1f}mm, "
+                          f"角度={det['angle']:.1f}度, "
+                          f"強度={det['intensity']:.3f}")
+            else:
+                print("  [定位計算] 物体は検出されませんでした")
+
+            # marker_trackerから現在位置を取得（リアルタイム更新）
+            print("  marker_trackerから現在位置を取得中...")
+            marker_position = self.get_robot_position_from_marker_tracker(
+                body_marker_set='robot_body',
+                head_marker_set='robot_head'
+            )
+
+            if marker_position is not None:
+                # marker_trackerから取得できた場合は更新
+                current_position = marker_position
+                self.update_current_position(current_position)
+            else:
+                # 取得失敗の場合は内部管理の位置を使用
+                print("  警告: marker_tracker取得失敗、前回の位置を使用")
+                current_position = self.current_position
+
+            print(f"  現在位置: ({current_position['x']:.3f}, {current_position['y']:.3f})")
+
+            # 事後分布を計算・更新
+            posterior_data = self.calculate_posterior_from_detections(step, current_position, detections)
+
+            # 移動指令を計算
+            command, new_position, emergency_avoidance = self.calculate_movement_command(step, current_position)
+
+            # 新しい位置を内部管理
+            self.update_current_position(new_position)
+
+            # 現在の状態を可視化
+            self.plot_current_state(step, current_position, posterior_data, emergency_avoidance)
+
+            # 実機ロボット形式で応答を作成
+            import datetime
+            response = {
+                'Time': datetime.datetime.now().isoformat(),
+                'NextMove': self._mm_to_m(command['move_distance']),  # mm → m
+                'NextAngle': self._deg_to_rad(command['avoidance_direction']),  # 度 → rad
+                'PulseDirection': self._deg_to_rad(command['pulse_direction'])  # 度 → rad
+            }
+
+            print(f"  応答送信: NextMove={response['NextMove']:.3f}m, "
+                  f"NextAngle={response['NextAngle']:.3f}rad ({command['avoidance_direction']:.1f}度), "
+                  f"PulseDirection={response['PulseDirection']:.3f}rad ({command['pulse_direction']:.1f}度)")
+
+            return response
+
+        except Exception as e:
+            print(f"  ✗ エラー: {e}")
+            import traceback
+            traceback.print_exc()
+            # エラー時も形式を合わせる
+            import datetime
+            return {
+                'Time': datetime.datetime.now().isoformat(),
+                'NextMove': 0.0,
+                'NextAngle': 0.0,
+                'PulseDirection': 0.0
+            }
+
     def handle_request(self, request):
         """
         要求を処理
@@ -726,14 +841,14 @@ class ControlPC:
             }
 
     def run(self):
-        """サーバーを起動"""
+        """サーバーを起動（新形式：相互相関配列）"""
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((self.host, self.port))
         server.listen(5)
 
         print(f"\n{'='*60}")
-        print("制御PC起動")
+        print("制御PC起動（新形式：相互相関配列）")
         print(f"待機中: {self.host}:{self.port}")
         print(f"{'='*60}\n")
 
@@ -743,48 +858,60 @@ class ControlPC:
                 print(f"\n[接続受信] robot_simulator から接続 ({addr[0]}:{addr[1]})")
 
                 try:
-                    # 【大容量データ受信プロトコル】
-                    # 1. データサイズを先に受信（4バイト、ビッグエンディアン）
-                    size_bytes = conn.recv(4)
-                    if len(size_bytes) < 4:
-                        raise ValueError("データサイズを受信できませんでした")
-
-                    data_size = int.from_bytes(size_bytes, byteorder='big')
-                    print(f"  受信予定データサイズ: {data_size} bytes")
-
-                    # 2. 実際のデータを受信（サイズ分を確実に受信）
-                    #    2MBのデータでもrecv()は一度に全て受信できないため、ループで受信
+                    # 【新形式受信プロトコル】
+                    # 改行終端のJSONデータを受信
                     data_bytes = b''
-                    remaining = data_size
-                    while remaining > 0:
-                        chunk = conn.recv(min(remaining, 65536))  # 64KBずつ受信
+                    while True:
+                        chunk = conn.recv(4096)
                         if not chunk:
-                            raise ValueError("データ受信が途中で終了しました")
+                            break
                         data_bytes += chunk
-                        remaining -= len(chunk)
+                        # 改行が見つかったら終了
+                        if b'\n' in data_bytes:
+                            break
 
                     print(f"  データ受信完了: {len(data_bytes)} bytes")
 
-                    # 3. JSONデコード
-                    data = data_bytes.decode('utf-8')
+                    # JSONデコード
+                    data = data_bytes.decode('utf-8').strip()
                     request = json.loads(data)
 
-                    # 要求を処理
-                    response = self.handle_request(request)
+                    # リクエスト形式を確認
+                    if isinstance(request, list) and len(request) == 2:
+                        # 新形式: [[crosscor_l], [crosscor_r]]
+                        crosscor_l = request[0]
+                        crosscor_r = request[1]
+                        response = self.handle_real_robot_request(crosscor_l, crosscor_r)
+                    else:
+                        # 不明な形式
+                        raise ValueError(f"不明なリクエスト形式: {type(request)}")
 
                     # 応答を送信
-                    conn.send(json.dumps(response).encode())
+                    response_json = json.dumps(response)
+                    conn.send(response_json.encode('utf-8'))
 
                 except json.JSONDecodeError as e:
                     print(f"✗ JSONデコードエラー: {e}")
-                    error_response = {'status': 'error', 'error': 'Invalid JSON'}
+                    import datetime
+                    error_response = {
+                        'Time': datetime.datetime.now().isoformat(),
+                        'NextMove': 0.0,
+                        'NextAngle': 0.0,
+                        'PulseDirection': 0.0
+                    }
                     conn.send(json.dumps(error_response).encode())
 
                 except Exception as e:
                     print(f"✗ エラー: {e}")
                     import traceback
                     traceback.print_exc()
-                    error_response = {'status': 'error', 'error': str(e)}
+                    import datetime
+                    error_response = {
+                        'Time': datetime.datetime.now().isoformat(),
+                        'NextMove': 0.0,
+                        'NextAngle': 0.0,
+                        'PulseDirection': 0.0
+                    }
                     conn.send(json.dumps(error_response).encode())
 
                 finally:

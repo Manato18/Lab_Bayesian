@@ -1,19 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Robot Simulator - 固定データ版
+Robot Simulator - 実機ロボット模擬版（Golang風）
 ====================================
-このプログラムは実際のロボットの動作をシミュレートします。
-ロボットは制御PCとだけ通信します。
+実機ロボット（Golang）のコードに似せたシミュレータ
+bayes_serverと実際にTCP通信を行います。
 
-機能:
-- 固定の_data_Multi.datファイルを制御PCに送信
-- 位置情報は制御PCが内部管理（marker_trackerから取得）
-- 制御PCから移動指令を受信
+動作フロー（Golangロボットと同じ）:
+1. エコーセンシング（DoSensing）→ 相互相関データをダミー生成
+2. サーバーに相互相関データを送信 [[crosscor_l], [crosscor_r]]
+3. サーバーから移動指令を受信 {"Time": ..., "NextMove": ..., "NextAngle": ..., "PulseDirection": ...}
+4. 移動実行（DoSingleMove）→ sleep
+5. パルス発生（CreateCall）→ ログ出力
 
-メインループの流れ:
-1. 固定の_data_Multi.datファイルを読み込み
-2. 制御PCに「ステップ番号とエコーデータ」を送信
-3. 制御PCから「回避方向、移動距離、パルス方向」を受信
+通信先:
+- control_pc.py (localhost:6001)
 """
 
 import time
@@ -21,165 +21,217 @@ import json
 import socket
 import sys
 import os
-import base64
-
-# 既存のモジュールをインポート
-from bayes_code import config
+import numpy as np
 
 
 class RobotSimulator:
     """
-    シンプルなロボットシミュレータ（固定データ版）
-    制御PCとだけ通信する
+    実機ロボット（Golang）の動作を模擬するシミュレータ
     """
 
-    def __init__(self, control_pc_host='localhost', control_pc_port=6001):
+    def __init__(self, server_host='localhost', server_port=6001):
         """
         ロボットシミュレータの初期化
 
         Args:
-            control_pc_host (str): 制御PCのホスト
-            control_pc_port (int): 制御PCのポート
+            server_host (str): control_pcのホスト
+            server_port (int): control_pcのポート
         """
-        # 通信設定
-        self.control_pc_addr = (control_pc_host, control_pc_port)
+        self.server_addr = (server_host, server_port)
+        self.step = 0
 
         print("=" * 60)
-        print("ロボットシミュレータを初期化しました")
+        print("ロボットシミュレータ（Golang風）を初期化しました")
+        print(f"サーバー: {server_host}:{server_port}")
         print("=" * 60)
 
-    def load_data_multi_file(self, step):
+    def do_sensing(self, step):
         """
-        指定されたステップの _data_Multi.dat ファイルを読み込む
+        エコーセンシング（DoSensing相当）
+
+        相互相関データを生成します。
+        実機では音響センシングを行いますが、ここでは：
+        - 既存の _data_Multi.dat ファイルから読み込み
+        - または、ダミーデータを生成
 
         Args:
             step (int): ステップ番号（1から開始）
 
         Returns:
-            dict: {'file_path': str, 'content_base64': str} or None (ファイルが存在しない場合)
+            tuple: (crosscor_l, crosscor_r) - 左右の相互相関データ（配列）
         """
         # ステップ番号は1から始まるが、ファイル名は0000から始まる
         file_index = step - 1
         file_name = f"{file_index:04d}_data_Multi.dat"
         file_path = os.path.join("robot_data", "wall_000", "goldorak", str(file_index), file_name)
 
-        if not os.path.exists(file_path):
-            print(f"    警告: ファイルが見つかりません: {file_path}")
-            return None
+        if os.path.exists(file_path):
+            # _data_Multi.dat ファイルから相互相関データを読み込み
+            return self._read_crosscor_from_file(file_path)
+        else:
+            # ファイルが見つからない場合はダミーデータを生成
+            print(f"    警告: {file_path} が見つかりません。ダミーデータを生成します。")
+            return self._generate_dummy_crosscor()
 
-        try:
-            # ファイルをバイナリモードで読み込み
-            with open(file_path, 'rb') as f:
-                content_bytes = f.read()
-
-            # Base64エンコード（JSON送信のため、特殊文字をエスケープ）
-            # 2MBのファイルでも安全にJSON文字列として送信可能
-            content_base64 = base64.b64encode(content_bytes).decode('ascii')
-
-            print(f"    ファイル読み込み成功: {file_path} ({len(content_bytes)} bytes → {len(content_base64)} bytes Base64)")
-            return {
-                'file_path': file_path,
-                'content_base64': content_base64
-            }
-        except Exception as e:
-            print(f"    エラー: ファイル読み込み失敗: {file_path}, {e}")
-            return None
-
-    def request_to_control_pc(self, step, data_multi_file=None):
+    def _read_crosscor_from_file(self, file_path):
         """
-        制御PCに問い合わせて移動指令を受信
+        _data_Multi.dat ファイルから相互相関データを読み込む
 
         Args:
-            step (int): ステップ番号
-            data_multi_file (dict): {'file_path': str, 'content_base64': str} or None
+            file_path (str): ファイルパス
 
         Returns:
-            dict: 移動指令 {'avoidance_direction', 'move_distance', 'pulse_direction'}
+            tuple: (crosscor_l, crosscor_r)
+        """
+        crosscor_l = []
+        crosscor_r = []
+
+        try:
+            with open(file_path, 'r') as f:
+                lines = f.read().split("\n")
+                for i in range(1, len(lines) - 1):
+                    parts = lines[i].replace('"', '').split(" ")
+                    if len(parts) >= 4:
+                        # parts[2]: corrL, parts[3]: corrR
+                        crosscor_l.append(float(parts[2]))
+                        crosscor_r.append(float(parts[3]))
+
+            print(f"    ファイル読み込み成功: {file_path} ({len(crosscor_l)} samples)")
+            return crosscor_l, crosscor_r
+
+        except Exception as e:
+            print(f"    エラー: ファイル読み込み失敗: {e}")
+            return self._generate_dummy_crosscor()
+
+    def _generate_dummy_crosscor(self):
+        """
+        ダミーの相互相関データを生成
+
+        Returns:
+            tuple: (crosscor_l, crosscor_r)
+        """
+        # 30000サンプルのダミーデータ（ノイズ + いくつかのピーク）
+        crosscor_l = np.random.normal(0, 0.1, 30000).tolist()
+        crosscor_r = np.random.normal(0, 0.1, 30000).tolist()
+
+        # いくつかのピークを追加（物体をシミュレート）
+        peak_positions = [5000, 10000, 15000]
+        for pos in peak_positions:
+            if pos < len(crosscor_l):
+                crosscor_l[pos] += 0.5
+                crosscor_r[pos + 100] += 0.4  # 時間差を付ける
+
+        print(f"    ダミーデータ生成: {len(crosscor_l)} samples")
+        return crosscor_l, crosscor_r
+
+    def send_data_to_server(self, crosscor_l, crosscor_r):
+        """
+        サーバーに相互相関データを送信して、移動指令を受信
+
+        Golangロボットと同じプロトコル：
+        - 送信: [[crosscor_l], [crosscor_r]] (JSON)
+        - 受信: {"Time": str, "NextMove": float (m), "NextAngle": float (rad), "PulseDirection": float (rad)}
+
+        Args:
+            crosscor_l (list): 左の相互相関データ
+            crosscor_r (list): 右の相互相関データ
+
+        Returns:
+            dict: 移動指令 {'Time': str, 'NextMove': float, 'NextAngle': float, 'PulseDirection': float}
         """
         try:
+            # TCPソケット接続
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(30.0)  # 30秒のタイムアウト
-            sock.connect(self.control_pc_addr)
+            sock.settimeout(30.0)
+            sock.connect(self.server_addr)
 
-            # 送信データ：ステップ番号、ファイルデータ（Base64エンコード済み）
-            request = {
-                'step': step,
-                'data_multi_file': data_multi_file  # None または {'file_path': str, 'content_base64': str}
-            }
+            # データをJSON形式で送信
+            data = [crosscor_l, crosscor_r]
+            data_json = json.dumps(data)
+            sock.sendall(data_json.encode('utf-8'))
+            sock.sendall(b'\n')  # 改行で終端を示す（Golangサーバーと同じ）
 
-            # JSONをバイト列に変換
-            request_json = json.dumps(request)
-            request_bytes = request_json.encode('utf-8')
+            print(f"    データ送信完了: {len(data_json)} bytes")
 
-            # 【大容量データ送信プロトコル】
-            # 1. データサイズを先に送信（4バイト、ビッグエンディアン）
-            #    受信側がデータ全体を受信するまでループできるようにする
-            data_size = len(request_bytes)
-            sock.sendall(data_size.to_bytes(4, byteorder='big'))
-
-            # 2. 実際のJSONデータを送信（sendallで確実に全送信）
-            sock.sendall(request_bytes)
-
-            print(f"    データ送信完了: {data_size} bytes")
-
-            # 受信：回避方向、移動距離、パルス方向
-            response = sock.recv(4096).decode()
+            # 移動指令を受信
+            response_bytes = sock.recv(4096)
             sock.close()
 
-            return json.loads(response)
+            response = json.loads(response_bytes.decode('utf-8'))
+            return response
 
         except socket.timeout:
-            print(f"  ✗ 制御PCへの接続がタイムアウトしました")
+            print(f"  ✗ サーバーへの接続がタイムアウトしました")
             raise
         except ConnectionRefusedError:
-            print(f"  ✗ 制御PCに接続できません（{self.control_pc_addr}）")
+            print(f"  ✗ サーバーに接続できません（{self.server_addr}）")
             print("    control_pc.pyが起動していることを確認してください")
             raise
         except Exception as e:
-            print(f"  ✗ 制御PCとの通信エラー: {e}")
+            print(f"  ✗ サーバーとの通信エラー: {e}")
             raise
+
+    def do_single_move(self, next_move, next_angle, pulse_direction=0.0):
+        """
+        移動実行（DoSingleMove相当）
+
+        実機では実際にモーター制御を行いますが、ここではsleepで模擬
+
+        Args:
+            next_move (float): 移動距離 [m]
+            next_angle (float): 回避角度 [rad]
+            pulse_direction (float): パルス放射方向 [rad]
+        """
+        print(f"    [移動実行] 距離={next_move:.3f}m, 角度={next_angle:.3f}rad ({np.degrees(next_angle):.1f}度), "
+              f"パルス方向={pulse_direction:.3f}rad ({np.degrees(pulse_direction):.1f}度)")
+        time.sleep(1.0)  # 移動時間をシミュレート
+        print(f"    移動完了")
+
 
     def run(self, max_steps=20):
         """
-        メインループ
+        メインループ（Golangのfor文に相当）
 
         Args:
             max_steps (int): 最大ステップ数
         """
         print("\n" + "=" * 60)
-        print("ロボットシミュレータ起動")
+        print("ロボットシミュレータ起動（Golang風）")
         print("=" * 60 + "\n")
 
         try:
-            for step in range(1, max_steps + 1):  # ステップ1から開始
+            for step in range(1, max_steps + 1):
                 print(f"\n--- ステップ {step} ---")
 
-                # 1. _data_Multi.dat ファイルを読み込む
-                print("[1] _data_Multi.dat ファイル読み込み中...")
-                data_multi_file = self.load_data_multi_file(step)
+                # 1. エコーセンシング（DoSensing）
+                print("[1] エコーセンシング実行中...")
+                crosscor_l, crosscor_r = self.do_sensing(step)
 
-                # 2. 制御PCに送信して指令を待つ
-                print("[2] 制御PCに問い合わせ中...")
-                response = self.request_to_control_pc(step, data_multi_file)
+                # 2. サーバーに送信して移動指令を受信
+                print("[2] サーバーに問い合わせ中...")
+                response = self.send_data_to_server(crosscor_l, crosscor_r)
 
-                if response.get('status') == 'ok':
-                    command = response['command']
-                    print(f"    指令受信: 回避={command['avoidance_direction']:.1f}°, "
-                          f"移動={command['move_distance']:.1f}mm, パルス={command['pulse_direction']:.1f}°")
+                if 'NextMove' in response and 'NextAngle' in response:
+                    next_move = response['NextMove']
+                    next_angle = response['NextAngle']
+                    pulse_direction = response.get('PulseDirection', 0.0)  # デフォルト0.0
+                    print(f"    指令受信: NextMove={next_move:.3f}m, NextAngle={next_angle:.3f}rad, "
+                          f"PulseDirection={pulse_direction:.3f}rad")
 
-                    # 3. 移動実行（1秒）
-                    print("  [3] 移動中...")
-                    time.sleep(1.0)
-                    print("    移動完了")
+                    # 3. 移動実行（DoSingleMove）
+                    print("[3] 移動中...")
+                    self.do_single_move(next_move, next_angle, pulse_direction)
+
+
                 else:
-                    print(f"    ✗ エラー: {response.get('error', 'Unknown')}")
+                    print(f"    ✗ エラー: {response}")
 
-            print("" + "=" * 60)
+            print("\n" + "=" * 60)
             print("ロボットシミュレータ終了")
             print("=" * 60)
 
         except KeyboardInterrupt:
-            print("中断されました")
+            print("\n中断されました")
         except Exception as e:
             print(f"\n✗ エラー: {e}")
             import traceback
@@ -189,15 +241,18 @@ class RobotSimulator:
 if __name__ == "__main__":
     print("""
 ╔══════════════════════════════════════════════════════════╗
-║     ロボットシミュレータ（固定データ版）                 ║
+║     ロボットシミュレータ（Golang風）                     ║
 ║                                                          ║
 ║  事前に以下を起動してください:                           ║
 ║    1. marker_tracker.py --mode test --port 6000          ║
 ║    2. control_pc.py                                      ║
+║                                                          ║
+║  このシミュレータは実機ロボット（Golang）の動作を        ║
+║  模擬し、control_pc.pyとTCP通信（ポート6001）します。    ║
 ╚══════════════════════════════════════════════════════════╝
     """)
 
-    max_steps = 200
+    max_steps = 20
     if len(sys.argv) > 1:
         try:
             max_steps = int(sys.argv[1])
@@ -205,5 +260,5 @@ if __name__ == "__main__":
         except ValueError:
             print("デフォルト: 20ステップ\n")
 
-    robot = RobotSimulator(control_pc_host='localhost', control_pc_port=6001)
+    robot = RobotSimulator(server_host='localhost', server_port=6001)
     robot.run(max_steps=max_steps)

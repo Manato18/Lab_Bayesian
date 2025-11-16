@@ -77,49 +77,90 @@ class Localizer:
             # 1. ファイル読み込み
             lsig, rsig, lcorr, rcorr = self._read_multi_dat(file_path)
 
-            # 2. 相関データの正規化
-            direct_pulse_time = 1000
-            lcorr = lcorr / max(lcorr[:direct_pulse_time])
-            rcorr = rcorr / max(rcorr[:direct_pulse_time])
-
-            # 3. ピーク検出
-            mindist = int(0.001 * 1000000)  # 1ms
-            left_peaktime, left_peakIntens = self._extract_peaks_utils(lcorr, self.threshold, mindist)
-            right_peaktime, right_peakIntens = self._extract_peaks_utils(rcorr, self.threshold, mindist)
-
-            # 4. 左右のピークをマッチング
-            LTime, RTime, Intens = self._get_new_obj(
-                left_peaktime, left_peakIntens,
-                right_peaktime, right_peakIntens,
-                self.max_delta_t
-            )
-
-            # 5. 距離・角度を計算
-            intens, objRad, objDeg, objDis, obj_X, obj_Y = self._calculate_object(
-                LTime, RTime, Intens,
-                self.sound_velocity,
-                self.mic_distance
-            )
-
-            # 6. 辞書形式に変換
-            detections = []
-            for i in range(len(objDis)):
-                detections.append({
-                    'distance': float(objDis[i]),
-                    'angle': float(objDeg[i]),
-                    'angle_rad': float(objRad[i]),
-                    'intensity': float(intens[i]),
-                    'obj_x': float(obj_X[i]),
-                    'obj_y': float(obj_Y[i])
-                })
-
-            return detections
+            # 2. 共通処理を呼び出し
+            return self._localize_from_arrays(lcorr, rcorr)
 
         except Exception as e:
             print(f"  ✗ 定位計算エラー: {e}")
             import traceback
             traceback.print_exc()
             return []
+
+    def localize_from_crosscor(self, crosscor_l, crosscor_r):
+        """
+        相互相関データから直接物体を定位（実機ロボット用）
+
+        Args:
+            crosscor_l (list or np.array): 左耳の相互相関データ
+            crosscor_r (list or np.array): 右耳の相互相関データ
+
+        Returns:
+            list: [{'distance': float (mm), 'angle': float (度)}, ...]
+                  定位した物体のリスト
+        """
+        try:
+            # numpy配列に変換
+            lcorr = np.array(crosscor_l)
+            rcorr = np.array(crosscor_r)
+
+            # 共通処理を呼び出し
+            return self._localize_from_arrays(lcorr, rcorr)
+
+        except Exception as e:
+            print(f"  ✗ 定位計算エラー (crosscor): {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+    def _localize_from_arrays(self, lcorr, rcorr):
+        """
+        相互相関配列から物体を定位（内部共通メソッド）
+
+        Args:
+            lcorr (np.array): 左耳の相互相関データ
+            rcorr (np.array): 右耳の相互相関データ
+
+        Returns:
+            list: [{'distance': float (mm), 'angle': float (度)}, ...]
+                  定位した物体のリスト
+        """
+        # 1. 相関データの正規化
+        direct_pulse_time = 1000
+        lcorr = lcorr / max(lcorr[:direct_pulse_time])
+        rcorr = rcorr / max(rcorr[:direct_pulse_time])
+
+        # 2. ピーク検出
+        mindist = int(0.001 * 1000000)  # 1ms
+        left_peaktime, left_peakIntens = self._extract_peaks_utils(lcorr, self.threshold, mindist)
+        right_peaktime, right_peakIntens = self._extract_peaks_utils(rcorr, self.threshold, mindist)
+
+        # 3. 左右のピークをマッチング
+        LTime, RTime, Intens = self._get_new_obj(
+            left_peaktime, left_peakIntens,
+            right_peaktime, right_peakIntens,
+            self.max_delta_t
+        )
+
+        # 4. 距離・角度を計算
+        intens, objRad, objDeg, objDis, obj_X, obj_Y = self._calculate_object(
+            LTime, RTime, Intens,
+            self.sound_velocity,
+            self.mic_distance
+        )
+
+        # 5. 辞書形式に変換
+        detections = []
+        for i in range(len(objDis)):
+            detections.append({
+                'distance': float(objDis[i]),
+                'angle': float(objDeg[i]),
+                'angle_rad': float(objRad[i]),
+                'intensity': float(intens[i]),
+                'obj_x': float(obj_X[i]),
+                'obj_y': float(obj_Y[i])
+            })
+
+        return detections
 
     def _read_multi_dat(self, datapath):
         """
