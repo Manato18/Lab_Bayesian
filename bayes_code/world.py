@@ -82,7 +82,10 @@ class World:
 
         # 障害物（ポール）の座標を読み込み
         self._real_obs()
-        print(f"障害物読み込み完了： {self.pole_x.shape} poles")
+        if len(self.pole_x) > 0:
+            print(f"障害物読み込み完了： {len(self.pole_x)}個")
+        else:
+            print(f"障害物読み込み完了： 0個（marker_trackerから後で取得）")
 
         
     def _setup_walls(self):
@@ -144,30 +147,44 @@ class World:
         """
         CSVファイルから障害物（ポール）の位置データを読み込む
         
+        注意: この機能は無効化されました。
+        障害物データはmarker_trackerから取得されます。
+        control_pc.pyの初期化時に、marker_trackerから取得した
+        障害物データで self.pole_x, self.pole_y が上書きされます。
+        
         Returns:
             Tuple[np.ndarray, np.ndarray]: (pole_x, pole_y) ポールのx, y座標配列
         """
-        try:
-            # ポールの位置情報をCSVファイルから読み込む
-            csv_path = f"{self.folder_name}/chain_position_y.csv"
-            chain_loc = pandas.read_csv(csv_path, header=0)
+        # try:
+        #     # ポールの位置情報をCSVファイルから読み込む
+        #     csv_path = f"{self.folder_name}/chain_position_y.csv"
+        #     chain_loc = pandas.read_csv(csv_path, header=0)
             
-            # マージンを考慮して座標を調整し、NumPy配列に変換
-            obs_x = chain_loc["X"].values + self.margin_space
-            obs_y = chain_loc["Y"].values + self.margin_space
+        #     # マージンを考慮して座標を調整し、NumPy配列に変換
+        #     obs_x = chain_loc["X"].values + self.margin_space
+        #     obs_y = chain_loc["Y"].values + self.margin_space
             
-            # すでにある場合は追加する
-            if self.pole_x is not None:
-                self.pole_x = np.concatenate([self.pole_x, np.array(obs_x)])
-                self.pole_y = np.concatenate([self.pole_y, np.array(obs_y)])
-            else:
-                self.pole_x = np.array(obs_x)
-                self.pole_y = np.array(obs_y)
+        #     # すでにある場合は追加する
+        #     if self.pole_x is not None:
+        #         self.pole_x = np.concatenate([self.pole_x, np.array(obs_x)])
+        #         self.pole_y = np.concatenate([self.pole_y, np.array(obs_y)])
+        #     else:
+        #         self.pole_x = np.array(obs_x)
+        #         self.pole_y = np.array(obs_y)
                         
-        except FileNotFoundError:
-            print(f"Warning: Obstacle data file not found {csv_path}")
-            print("Using default obstacle positions")
+        # except FileNotFoundError:
+        #     print(f"Warning: Obstacle data file not found {csv_path}")
+        #     print("Using default obstacle positions")
             
-        except Exception as e:
-            print(f"Error loading obstacles: {e}")
+        # except Exception as e:
+        #     print(f"Error loading obstacles: {e}")
+                # CSVからの読み込みを無効化
+        # marker_trackerから取得するため、この処理は実行しない
+        print("World._real_obs(): CSVからの障害物読み込みはスキップされました（marker_trackerから取得）")
+
+        # pole_x, pole_yを空配列で初期化（control_pc.pyで上書きされる）
+        if self.pole_x is None:
+            self.pole_x = np.array([])
+        if self.pole_y is None:
+            self.pole_y = np.array([])
 

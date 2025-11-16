@@ -5,11 +5,11 @@ Control PC - 制御PC
 このプログラムはベイズ推論と回避計算を担当します。
 
 機能:
-1. env_serverからロボットの位置を取得
+1. marker_trackerからロボットの位置を取得
 2. ロボットからの物体定位情報を受信
 3. ベイズ推論で事後確率を更新
 4. 回避方向を計算
-5. env_serverにロボットの新しい位置を更新
+5. 内部で位置を管理・更新
 6. 移動指令を返す
 """
 
@@ -25,6 +25,7 @@ from bayes_code.agent import Agent, Obj
 from bayes_code.calc import r_theta_matrix, real_dist_goback_matrix, dist_attenuation, direc_attenuation, sigmoid, ear_posit, r_theta_to_XY_calc, real_dist_goback, space_echo_translater
 from bayes_code.localization import Localizer
 from bayes_code.robot_visualize import BatVisualizer
+from marker_tracker_client import MarkerTrackerClient
 
 
 class ControlPC:
@@ -33,25 +34,40 @@ class ControlPC:
     ベイズ推論と回避計算を担当する
     """
 
-    def __init__(self, host='localhost', port=6001, env_server_host='localhost', env_server_port=6000):
+    def __init__(self, host='localhost', port=6001,
+                 marker_tracker_host='localhost', marker_tracker_port=6000):
         """
         制御PCの初期化
 
         Args:
             host (str): 制御PCのホスト
             port (int): 制御PCのポート
-            env_server_host (str): 環境情報サーバーのホスト
-            env_server_port (int): 環境情報サーバーのポート
+            marker_tracker_host (str): marker_trackerのホスト
+            marker_tracker_port (int): marker_trackerのポート
         """
         self.host = host
         self.port = port
-        self.env_server_addr = (env_server_host, env_server_port)
 
         print("=" * 60)
         print("制御PCを初期化中...")
         print("=" * 60)
 
-        # World初期化
+        # MarkerTrackerClient初期化
+        print("MarkerTrackerClient初期化中...")
+        self.marker_tracker = MarkerTrackerClient(
+            host=marker_tracker_host,
+            port=marker_tracker_port
+        )
+        print("✓ MarkerTrackerClient初期化完了")
+
+        # 接続テスト
+        print("marker_trackerへの接続を確認中...")
+        if not self.marker_tracker.test_connection():
+            print("警告: marker_trackerへの接続に失敗しました")
+            print("  marker_tracker.pyが起動していることを確認してください")
+            print("  テストモード: python marker_tracker.py --mode test --port 6000")
+
+        # World初期化（障害物データはまだ読み込まない）
         print("World初期化中...")
         self.world = World(
             x_max=config.x_max,
@@ -63,6 +79,25 @@ class ControlPC:
             c=config.c,
             folder_name=config.folder_name
         )
+
+        # 障害物をmarker_trackerから取得（'obstacles'マーカーセットから）
+        print("marker_trackerから障害物情報を取得中...")
+        obs_x, obs_y = self.marker_tracker.get_obstacles('obstacles')
+
+        if len(obs_x) > 0:
+            # marker_trackerから取得した障害物データで上書き
+            self.world.pole_x = obs_x
+            self.world.pole_y = obs_y
+            print(f"✓ 障害物データ取得完了: {len(obs_x)}個")
+        else:
+            print("警告: marker_trackerから障害物を取得できませんでした")
+            print("  障害物全てを選択して'obstacles'という名前のマーカーセットを作成してください")
+            # Worldが既に読み込んでいるCSVデータを使用（もしあれば）
+            if self.world.pole_x is not None and len(self.world.pole_x) > 0:
+                print(f"  フォールバック: CSVから読み込んだ障害物データを使用（{len(self.world.pole_x)}個）")
+            else:
+                print("  警告: 障害物データがありません")
+
         print("✓ World初期化完了")
 
         # Bayesian初期化
@@ -74,13 +109,31 @@ class ControlPC:
         )
         print("✓ Bayesian初期化完了")
 
-        # env_serverからロボットの初期位置を取得
-        print("env_serverからロボット初期位置を取得中...")
-        init_pos_data = self.get_robot_position_from_env_server()
-        init_pos = [init_pos_data['x'], init_pos_data['y'],
-                    init_pos_data['fd'], init_pos_data['pd']]
+        # marker_trackerからロボットの初期位置を取得
+        print("marker_trackerからロボット初期位置を取得中...")
+        init_pos_data = self.get_robot_position_from_marker_tracker(
+            body_marker_set='robot_body',
+            head_marker_set='robot_head'
+        )
+
+        if init_pos_data is None:
+            # フォールバック: configの初期値を使用
+            print("警告: marker_trackerから位置取得失敗、config初期値を使用")
+            init_pos = config.init_pos
+        else:
+            init_pos = [init_pos_data['x'], init_pos_data['y'],
+                        init_pos_data['fd'], init_pos_data['pd']]
+
         print(f"✓ ロボット初期位置: x={init_pos[0]:.3f}m, y={init_pos[1]:.3f}m, "
               f"fd={init_pos[2]:.1f}度, pd={init_pos[3]:.1f}度")
+
+        # 現在位置を内部管理
+        self.current_position = {
+            'x': init_pos[0],
+            'y': init_pos[1],
+            'fd': init_pos[2],
+            'pd': init_pos[3]
+        }
 
         # Agent初期化（事後分布の計算に必要）
         print("Agent初期化中...")
@@ -92,7 +145,7 @@ class ControlPC:
             Y=self.world.Y,
             sim={
                 "trials": config.trials,
-                "init_pos": init_pos  # env_serverから取得した位置
+                "init_pos": init_pos
             },
             world=self.world
         )
@@ -119,9 +172,7 @@ class ControlPC:
 
         # BatVisualizer初期化（可視化）
         print("BatVisualizer初期化中...")
-        # ★仮データ★ 壁の座標（ダミー: 正方形の部屋を想定）
-        # TODO: 実際の環境では、env_serverから実際の壁座標を取得する必要があります
-        # 現在は config.x_max, config.y_max で定義される正方形の部屋を想定
+        # 壁の座標（正方形の部屋を想定）
         wall_x = np.array([0, config.x_max, config.x_max, 0])
         wall_y = np.array([0, 0, config.y_max, config.y_max])
 
@@ -143,63 +194,181 @@ class ControlPC:
         os.makedirs(self.viz_output_dir, exist_ok=True)
         print(f"✓ 可視化出力ディレクトリ: {self.viz_output_dir}")
 
+        # 初期状態の可視化
+        print("初期状態を可視化中...")
+        self.plot_initial_state()
+        print("✓ 初期状態の可視化完了")
+
         print("=" * 60)
         print("制御PC初期化完了")
         print("=" * 60)
 
-    def get_robot_position_from_env_server(self):
+    def get_robot_position_from_marker_tracker(self, body_marker_set='robot_body',
+                                               head_marker_set='robot_head'):
         """
-        env_serverからロボット位置を取得
+        marker_trackerからロボット位置を取得
+
+        Args:
+            body_marker_set (str): ロボット本体のマーカーセット名
+            head_marker_set (str): ロボット頭部のマーカーセット名
 
         Returns:
-            dict: {'x': float, 'y': float, 'fd': float, 'pd': float}
+            dict or None: {'x': float, 'y': float, 'fd': float, 'pd': float}
         """
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(5.0)
-            sock.connect(self.env_server_addr)
-            print(f"[接続成功] env_server ({self.env_server_addr[0]}:{self.env_server_addr[1]}) に接続しました")
+            position = self.marker_tracker.get_robot_position(
+                body_marker_set=body_marker_set,
+                head_marker_set=head_marker_set
+            )
 
-            request = {'command': 'get_robot_position'}
-            sock.send(json.dumps(request).encode())
-            response = sock.recv(4096).decode()
-            sock.close()
+            if position is None:
+                return None
 
-            return json.loads(response)
+            # z座標は無視（2D平面での動作を想定）
+            return {
+                'x': position['x'],
+                'y': position['y'],
+                'fd': position['fd'],
+                'pd': position['pd']
+            }
 
         except Exception as e:
-            print(f"✗ env_serverからの位置取得エラー: {e}")
-            raise
+            print(f"✗ marker_trackerからの位置取得エラー: {e}")
+            return None
 
-    def update_robot_position_to_env_server(self, new_position):
+    def update_current_position(self, new_position):
         """
-        env_serverにロボットの新しい位置を更新
+        内部で管理している現在位置を更新
 
         Args:
             new_position (dict): {'x': float, 'y': float, 'fd': float, 'pd': float}
-
-        Returns:
-            bool: 成功/失敗
         """
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(5.0)
-            sock.connect(self.env_server_addr)
+        self.current_position = new_position
+        print(f"位置更新: x={new_position['x']:.3f}m, y={new_position['y']:.3f}m, "
+              f"fd={new_position['fd']:.1f}度, pd={new_position['pd']:.1f}度")
 
-            request = {
-                'command': 'update_position',
-                'data': new_position
-            }
-            sock.send(json.dumps(request).encode())
-            response = sock.recv(1024).decode()
-            sock.close()
+    def plot_initial_state(self):
+        """
+        初期状態を可視化して保存
 
-            result = json.loads(response)
-            return result.get('status') == 'ok'
+        ロボット位置、頭部方向、放射方向、壁、障害物を図示します。
+        """
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as patches
 
-        except Exception as e:
-            print(f"✗ env_serverへの位置更新エラー: {e}")
-            return False
+        fig, ax = plt.subplots(figsize=(10, 10))
+
+        # 壁を描画（四角形）
+        wall_x_min = self.world.wall_x[0]
+        wall_x_max = self.world.wall_x[1]
+        wall_y_min = self.world.wall_y[0]
+        wall_y_max = self.world.wall_y[1]
+
+        wall_rect = patches.Rectangle(
+            (wall_x_min, wall_y_min),
+            wall_x_max - wall_x_min,
+            wall_y_max - wall_y_min,
+            linewidth=3,
+            edgecolor='black',
+            facecolor='none',
+            label='Wall'
+        )
+        ax.add_patch(wall_rect)
+
+        # 障害物を描画
+        if len(self.world.pole_x) > 0:
+            ax.scatter(
+                self.world.pole_x,
+                self.world.pole_y,
+                c='red',
+                s=100,
+                marker='o',
+                label=f'Obstacles ({len(self.world.pole_x)})',
+                zorder=3
+            )
+
+        # ロボット位置を描画
+        robot_x = self.current_position['x']
+        robot_y = self.current_position['y']
+        fd = self.current_position['fd']
+        pd = self.current_position['pd']
+
+        # ロボット本体（青い点）
+        ax.scatter(
+            robot_x, robot_y,
+            c='blue',
+            s=200,
+            marker='o',
+            label='Robot Position',
+            zorder=5
+        )
+
+        # 矢印の長さ
+        arrow_length = 0.3
+
+        # 頭部方向（pd）を緑の矢印で描画
+        pd_rad = np.radians(pd)
+        ax.arrow(
+            robot_x, robot_y,
+            arrow_length * np.cos(pd_rad),
+            arrow_length * np.sin(pd_rad),
+            head_width=0.1,
+            head_length=0.1,
+            fc='green',
+            ec='green',
+            linewidth=2,
+            label=f'Head Direction (pd)={pd:.1f}°',
+            zorder=6
+        )
+
+        # 放射方向（fd）を紫の矢印で描画
+        fd_rad = np.radians(fd)
+        ax.arrow(
+            robot_x, robot_y,
+            arrow_length * np.cos(fd_rad),
+            arrow_length * np.sin(fd_rad),
+            head_width=0.1,
+            head_length=0.1,
+            fc='purple',
+            ec='purple',
+            linewidth=2,
+            linestyle='--',
+            label=f'Pulse Direction (fd)={fd:.1f}°',
+            zorder=6
+        )
+
+        # グラフの設定
+        ax.set_xlim(-0.2, config.x_max + 0.2)
+        ax.set_ylim(-0.2, config.y_max + 0.2)
+        ax.set_xlabel('X [m]', fontsize=12)
+        ax.set_ylabel('Y [m]', fontsize=12)
+        ax.set_title('Control PC - Initial State', fontsize=14, fontweight='bold')
+        ax.set_aspect('equal')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='upper right', fontsize=10)
+
+        # 位置情報をテキストで表示
+        info_text = (
+            f'Robot Position: ({robot_x:.3f}, {robot_y:.3f}) m\n'
+            f'Head Direction (pd): {pd:.1f}°\n'
+            f'Pulse Direction (fd): {fd:.1f}°\n'
+            f'Obstacles: {len(self.world.pole_x)}'
+        )
+        ax.text(
+            0.02, 0.98,
+            info_text,
+            transform=ax.transAxes,
+            fontsize=10,
+            verticalalignment='top',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+        )
+
+        # 保存
+        output_path = os.path.join(self.viz_output_dir, 'initial_state.png')
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+        print(f"  初期状態の図を保存: {output_path}")
 
     def save_data_multi_file(self, step, file_path, content_base64):
         """
@@ -512,9 +681,22 @@ class ControlPC:
             else:
                 print("  _data_Multi.dat ファイルなし（ファイルが見つからなかった可能性あり）")
 
-            # env_serverから現在位置を取得
-            print("  env_serverから現在位置を取得中...")
-            current_position = self.get_robot_position_from_env_server()
+            # marker_trackerから現在位置を取得（リアルタイム更新）
+            print("  marker_trackerから現在位置を取得中...")
+            marker_position = self.get_robot_position_from_marker_tracker(
+                body_marker_set='robot_body',
+                head_marker_set='robot_head'
+            )
+
+            if marker_position is not None:
+                # marker_trackerから取得できた場合は更新
+                current_position = marker_position
+                self.update_current_position(current_position)
+            else:
+                # 取得失敗の場合は内部管理の位置を使用
+                print("  警告: marker_tracker取得失敗、前回の位置を使用")
+                current_position = self.current_position
+
             print(f"  現在位置: ({current_position['x']:.3f}, {current_position['y']:.3f})")
 
             # 事後分布を計算・更新（戻り値を受け取る）
@@ -523,13 +705,8 @@ class ControlPC:
             # 移動指令を計算
             command, new_position, emergency_avoidance = self.calculate_movement_command(step, current_position)
 
-            # env_serverに新しい位置を更新
-            print("  env_serverに新しい位置を更新中...")
-            success = self.update_robot_position_to_env_server(new_position)
-            if success:
-                print("  ✓ 位置更新完了")
-            else:
-                print("  ✗ 位置更新失敗")
+            # 新しい位置を内部管理（env_serverへの更新は不要）
+            self.update_current_position(new_position)
 
             # 現在の状態を可視化
             self.plot_current_state(step, current_position, posterior_data, emergency_avoidance)
@@ -627,15 +804,23 @@ if __name__ == "__main__":
 ╔══════════════════════════════════════════════════════════╗
 ║                  制御PC                                  ║
 ║                                                          ║
-║  このプログラムを2番目に起動してください                 ║
-║  (1番目: env_server.py)                                  ║
+║  marker_tracker.pyを起動してから実行してください         ║
+║  テストモード: python marker_tracker.py --mode test --port 6000
+║                                                          ║
+║  Motive側で以下を設定:                                   ║
+║  - robot_body: ロボット本体のマーカーセット              ║
+║                (z座標最大の点をロボット位置とする)       ║
+║  - robot_head: ロボット頭部のマーカーセット（3点）       ║
+║                (真ん中の点をヘッド位置とする)            ║
+║  - obstacles: 障害物全てを含む1つのマーカーセット        ║
+║               (各マーカーが個別の障害物を表す)           ║
 ╚══════════════════════════════════════════════════════════╝
     """)
 
     control_pc = ControlPC(
         host='localhost',
         port=6001,
-        env_server_host='localhost',
-        env_server_port=6000
+        marker_tracker_host='localhost',
+        marker_tracker_port=6000
     )
     control_pc.run()

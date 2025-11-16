@@ -348,11 +348,32 @@ class SimpleMarkerTracker:
         offset_y = 0.01 * math.cos(2 * math.pi * t / 10.0)
         offset_z = 0.015 * math.sin(2 * math.pi * t / 5.0)
 
-        # robot_head マーカーセット（3個のマーカー）
+        # robot_body マーカーセット（5個のマーカー、z座標が異なる）
+        # z座標が最も高いマーカー（インデックス0）がロボット位置として使用される
+        robot_body_markers = [
+            [1.600 + offset_x, 0.200 + offset_y, 0.850 + offset_z],  # z最大（ロボット位置）
+            [1.590 + offset_x, 0.210 + offset_y, 0.840 + offset_z],
+            [1.610 + offset_x, 0.190 + offset_y, 0.835 + offset_z],
+            [1.595 + offset_x, 0.205 + offset_y, 0.830 + offset_z],
+            [1.605 + offset_x, 0.195 + offset_y, 0.825 + offset_z],
+        ]
+
+        # robot_head マーカーセット（3個のマーカー、直線上に配置）
+        # 真ん中のマーカー（インデックス1）がヘッド位置として使用される
         robot_head_markers = [
             [1.617 + offset_x, 0.197 + offset_y, 0.903 + offset_z],
-            [1.638 + offset_x, 0.192 + offset_y, 0.905 + offset_z],
+            [1.638 + offset_x, 0.192 + offset_y, 0.905 + offset_z],  # 真ん中
             [1.598 + offset_x, 0.192 + offset_y, 0.898 + offset_z],
+        ]
+
+        # obstacles マーカーセット（障害物全てを含む1つのマーカーセット）
+        # 各マーカーが個別の障害物を表す
+        obstacles_markers = [
+            [2.5, 1.5, 0.1],   # 障害物1
+            [1.0, 2.0, 0.1],   # 障害物2
+            [3.0, 3.0, 0.1],   # 障害物3
+            [0.5, 0.5, 0.1],   # 障害物4
+            [3.5, 1.0, 0.1],   # 障害物5
         ]
 
         # その他のマーカー（legacy_other_markers用）
@@ -362,23 +383,55 @@ class SimpleMarkerTracker:
             [1.985 + offset_x * 0.6, -0.009 + offset_y * 0.85, 0.760 + offset_z * 0.5],
         ]
 
+        # ラベル付きマーカー用のIDリスト
+        labeled_markers_list = []
+
+        # robot_bodyのマーカー（ID: 60001-60005）
+        for i, marker in enumerate(robot_body_markers):
+            labeled_markers_list.append({
+                "id": 60001 + i,
+                "pos": marker
+            })
+
+        # robot_headのマーカー（ID: 65537-65539）
+        labeled_markers_list.extend([
+            {"id": 65537, "pos": robot_head_markers[0]},
+            {"id": 65538, "pos": robot_head_markers[1]},
+            {"id": 65539, "pos": robot_head_markers[2]},
+        ])
+        
+        # その他のマーカー
+        labeled_markers_list.extend([
+            {"id": 16027, "pos": other_markers[0]},
+            {"id": 16029, "pos": other_markers[1]},
+            {"id": 16454, "pos": other_markers[2]},
+        ])
+        
+        # 障害物マーカー（IDは20001から連番）
+        for i, obs_marker in enumerate(obstacles_markers):
+            labeled_markers_list.append({
+                "id": 20001 + i,
+                "pos": obs_marker
+            })
+
         result = {
             "timestamp": ts,
             "frame": frame_number,
-            # ラベル付きマーカー（robot_head の3個 + その他3個）
-            "labeled_markers": [
-                {"id": 65537, "pos": robot_head_markers[0]},
-                {"id": 65538, "pos": robot_head_markers[1]},
-                {"id": 65539, "pos": robot_head_markers[2]},
-                {"id": 16027, "pos": other_markers[0]},
-                {"id": 16029, "pos": other_markers[1]},
-                {"id": 16454, "pos": other_markers[2]},
-            ],
+            # ラベル付きマーカー
+            "labeled_markers": labeled_markers_list,
             # マーカーセット
             "marker_sets": [
                 {
+                    "name": "robot_body",
+                    "markers": robot_body_markers,
+                },
+                {
                     "name": "robot_head",
                     "markers": robot_head_markers,
+                },
+                {
+                    "name": "obstacles",
+                    "markers": obstacles_markers,
                 },
                 {
                     "name": "all",
@@ -389,10 +442,19 @@ class SimpleMarkerTracker:
             "unlabeled_markers": [],
             # レガシーその他マーカー
             "legacy_other_markers": other_markers,
-            # 剛体（robot_head の中心位置を計算）
+            # 剛体（robot_bodyとrobot_headの中心位置を計算）
             "rigid_bodies": [
                 {
                     "id": 1,
+                    "pos": [
+                        sum(m[0] for m in robot_body_markers) / len(robot_body_markers),
+                        sum(m[1] for m in robot_body_markers) / len(robot_body_markers),
+                        sum(m[2] for m in robot_body_markers) / len(robot_body_markers),
+                    ],
+                    "tracking_valid": True,
+                },
+                {
+                    "id": 2,
                     "pos": [
                         sum(m[0] for m in robot_head_markers) / 3,
                         sum(m[1] for m in robot_head_markers) / 3,
