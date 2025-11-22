@@ -490,6 +490,48 @@ class SimpleMarkerTracker:
         """HTTPサーバを起動し、/latest と /marker_set で最新データを返す"""
         tracker = self
 
+        def swap_yz_snapshot(snapshot):
+            """
+            スナップショット内の全ての座標について、
+            [x, y, z] -> [x, z, y] に入れ替える。
+            （サーバが返す座標系だけを変換し、内部保持はそのままにする）
+            """
+            if snapshot is None:
+                return None
+
+            snap = copy.deepcopy(snapshot)
+
+            # labeled_markers: [{'id': int, 'pos': [x,y,z]}]
+            for lm in snap.get("labeled_markers", []) or []:
+                pos = lm.get("pos")
+                if isinstance(pos, list) and len(pos) >= 3:
+                    pos[1], pos[2] = pos[2], pos[1]
+
+            # marker_sets: [{'name': str, 'markers': [[x,y,z], ...]}, ...]
+            for ms in snap.get("marker_sets", []) or []:
+                markers = ms.get("markers") or []
+                for p in markers:
+                    if isinstance(p, list) and len(p) >= 3:
+                        p[1], p[2] = p[2], p[1]
+
+            # unlabeled_markers: [[x,y,z], ...]
+            for p in snap.get("unlabeled_markers", []) or []:
+                if isinstance(p, list) and len(p) >= 3:
+                    p[1], p[2] = p[2], p[1]
+
+            # legacy_other_markers: [[x,y,z], ...]
+            for p in snap.get("legacy_other_markers", []) or []:
+                if isinstance(p, list) and len(p) >= 3:
+                    p[1], p[2] = p[2], p[1]
+
+            # rigid_bodies: [{'id': int, 'pos': [x,y,z], ...}, ...]
+            for rb in snap.get("rigid_bodies", []) or []:
+                pos = rb.get("pos")
+                if isinstance(pos, list) and len(pos) >= 3:
+                    pos[1], pos[2] = pos[2], pos[1]
+
+            return snap
+
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 try:
@@ -499,6 +541,7 @@ class SimpleMarkerTracker:
 
                     if path == "/latest":
                         snapshot = tracker.get_latest_snapshot()
+                        snapshot = swap_yz_snapshot(snapshot)
                         payload = {"ok": True, "snapshot": snapshot}
                         body = json.dumps(payload).encode('utf-8')
                         try:
@@ -529,6 +572,7 @@ class SimpleMarkerTracker:
 
                         name = names[0]
                         snap = tracker.get_latest_snapshot()
+                        snap = swap_yz_snapshot(snap)
                         result = {
                             "ok": True,
                             "name": name,

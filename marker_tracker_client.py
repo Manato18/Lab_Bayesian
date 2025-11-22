@@ -223,8 +223,10 @@ class MarkerTrackerClient:
         if pd < 0:
             pd += 360
 
-        # 4. fd（放射方向）を計算: head3点の直線方向
-        fd = self._calculate_head_direction(head_markers_array)
+        # 4. fd（放射方向）は一旦 pd（頭部方向）と同じとする
+        #    以前は head3点の主軸方向から計算していたが、運用上わかりやすくするため
+        #    現時点では頭部方向と放射方向を一致させる。
+        fd = pd
 
         position = {
             'x': float(body_pos[0]),
