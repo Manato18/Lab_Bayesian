@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-MarkerTrackerClient - marker_tracker.pyからデータを取得するラッパークラス
+MarkerTrackerClient - marker_server.pyからデータを取得するラッパークラス
 
-このクラスはmarker_tracker.pyが提供するHTTP APIにアクセスし、
+このクラスはmarker_server.pyが提供するHTTP APIにアクセスし、
 ロボットの位置情報や障害物情報を取得します。
 
-marker_tracker.pyの仕様に準拠:
+marker_server.pyの仕様に準拠:
 - GET /latest: 最新スナップショット全体を取得
 - GET /marker_set?name=<name>: 特定マーカーセットを取得
 
@@ -34,7 +34,7 @@ from typing import Dict, List, Optional, Tuple
 
 class MarkerTrackerClient:
     """
-    marker_tracker.py (HTTPサーバー) からマーカーデータを取得するクライアント
+    marker_server.py (HTTPサーバー) からマーカーデータを取得するクライアント
 
     marker_test.pyの実装パターンに準拠したエラーハンドリングと
     urllib.parse.urlencode()を使用したURL構築を行います。
@@ -43,8 +43,8 @@ class MarkerTrackerClient:
     def __init__(self, host='localhost', port=6000, timeout=5.0):
         """
         Args:
-            host (str): marker_trackerのホスト
-            port (int): marker_trackerのポート
+            host (str): marker_serverのホスト
+            port (int): marker_serverのポート
             timeout (float): HTTPリクエストのタイムアウト（秒）
         """
         self.host = host
@@ -86,7 +86,7 @@ class MarkerTrackerClient:
                 return result
 
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ConnectionError) as e:
-            print(f"✗ marker_tracker接続エラー: {e}")
+            print(f"✗ marker_server接続エラー: {e}")
             return None
         except json.JSONDecodeError as e:
             print(f"✗ JSONデコードエラー: {e}")
@@ -134,7 +134,7 @@ class MarkerTrackerClient:
                 return result
 
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ConnectionError) as e:
-            print(f"✗ marker_tracker接続エラー: {e}")
+            print(f"✗ marker_server接続エラー: {e}")
             return None
         except json.JSONDecodeError as e:
             print(f"✗ JSONデコードエラー: {e}")
@@ -337,7 +337,7 @@ class MarkerTrackerClient:
         result = self.get_marker_set(marker_set_name)
 
         if result is None or not result.get('ok'):
-            print(f"警告: marker_trackerから'{marker_set_name}'を取得できませんでした（空配列を返します）")
+            print(f"警告: marker_serverから'{marker_set_name}'を取得できませんでした（空配列を返します）")
             return np.array([]), np.array([])
 
         if not result.get('found'):
@@ -363,12 +363,12 @@ class MarkerTrackerClient:
 
     def test_connection(self) -> bool:
         """
-        marker_trackerへの接続テスト
+        marker_serverへの接続テスト
 
         Returns:
             bool: 接続成功したかどうか
         """
-        print(f"marker_tracker接続テスト: {self.base_url}")
+        print(f"marker_server接続テスト: {self.base_url}")
 
         result = self.get_latest()
 
@@ -406,8 +406,8 @@ if __name__ == "__main__":
 ╔══════════════════════════════════════════════════════════╗
 ║        MarkerTrackerClient テスト                        ║
 ║                                                          ║
-║  事前に marker_tracker.py をtestモードで起動:            ║
-║  python marker_tracker.py --mode test --port 6000        ║
+║  事前に marker_server.py をtestモードで起動:             ║
+║  python marker_server.py --mode test --port 6000         ║
 ╚══════════════════════════════════════════════════════════╝
     """)
 

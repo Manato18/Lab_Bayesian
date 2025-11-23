@@ -11,7 +11,6 @@ World Class for Bayesian Simulation
 4. 障害物データの読み込み
 """
 
-import pandas
 import numpy as np
 
 # 設定ファイルから必要なパラメータをインポート
@@ -85,7 +84,7 @@ class World:
         if len(self.pole_x) > 0:
             print(f"障害物読み込み完了： {len(self.pole_x)}個")
         else:
-            print(f"障害物読み込み完了： 0個（marker_trackerから後で取得）")
+            print(f"障害物読み込み完了： 0個（marker_serverから後で取得）")
 
         
     def _setup_walls(self):
@@ -146,10 +145,10 @@ class World:
     def _real_obs(self):
         """
         CSVファイルから障害物（ポール）の位置データを読み込む
-        
+
         注意: この機能は無効化されました。
-        障害物データはmarker_trackerから取得されます。
-        control_pc.pyの初期化時に、marker_trackerから取得した
+        障害物データはmarker_serverから取得されます。
+        control_pc.pyの初期化時に、marker_serverから取得した
         障害物データで self.pole_x, self.pole_y が上書きされます。
         
         Returns:
@@ -179,8 +178,8 @@ class World:
         # except Exception as e:
         #     print(f"Error loading obstacles: {e}")
                 # CSVからの読み込みを無効化
-        # marker_trackerから取得するため、この処理は実行しない
-        print("World._real_obs(): CSVからの障害物読み込みはスキップされました（marker_trackerから取得）")
+        # marker_serverから取得するため、この処理は実行しない
+        print("World._real_obs(): CSVからの障害物読み込みはスキップされました（marker_serverから取得）")
 
         # pole_x, pole_yを空配列で初期化（control_pc.pyで上書きされる）
         if self.pole_x is None:

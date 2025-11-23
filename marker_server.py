@@ -16,16 +16,16 @@ OptiTrack マーカートラッキング＆HTTP提供ツール（サーバ／プ
 
 基本の使い方:
 - サーバーモード（デフォルト）
-    python robot_bayse/marker_tracker.py --server-ip <Motive_IP> --client-ip <THIS_PC_IP> [--port 6000]
+    python robot_bayse/marker_server.py --server-ip <Motive_IP> --client-ip <THIS_PC_IP> [--port 6000]
   エンドポイント:
     - GET /latest                     例: http://localhost:6000/latest
     - GET /marker_set?name=robot_head 例: http://localhost:6000/marker_set?name=robot_head
 
 - プリント表示（一定間隔で概要を出力）
-    python robot_bayse/marker_tracker.py --server-ip <Motive_IP> --client-ip <THIS_PC_IP> --mode print [--interval 1.0]
+    python robot_bayse/marker_server.py --server-ip <Motive_IP> --client-ip <THIS_PC_IP> --mode print [--interval 1.0]
 
 - テストモード（ダミーデータをHTTP提供、Motive接続不要）
-    python robot_bayse/marker_tracker.py --mode test [--port 6000]
+    python robot_bayse/marker_server.py --mode test [--port 6000]
 
 引数の要点:
 - --server-ip / --client-ip は省略可（未指定は localhost）。
