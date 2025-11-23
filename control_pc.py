@@ -845,6 +845,9 @@ class ControlPC:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((self.host, self.port))
         server.listen(5)
+        # Windows 環境で KeyboardInterrupt(Ctrl+C) が効かない問題に対処するため
+        # accept() にタイムアウトを設定し、定期的にループを戻す
+        server.settimeout(1.0)
 
         print(f"\n{'='*60}")
         print("制御PC起動（新形式：相互相関配列）")
@@ -853,7 +856,12 @@ class ControlPC:
 
         try:
             while True:
-                conn, addr = server.accept()
+                try:
+                    conn, addr = server.accept()
+                except socket.timeout:
+                    # タイムアウト時は何もせず再ループ（Ctrl+C を拾えるようにする）
+                    continue
+
                 print(f"\n[接続受信] robot_simulator から接続 ({addr[0]}:{addr[1]})")
 
                 try:
@@ -943,6 +951,7 @@ if __name__ == "__main__":
 ╚══════════════════════════════════════════════════════════╝
     """)
 
+    # 実機ロボット接続用に外部から到達できるアドレス/ポートで待機する
     control_pc = ControlPC(
         host='localhost',
         port=6001,
