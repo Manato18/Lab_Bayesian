@@ -6,19 +6,19 @@
    - [3つのコンポーネント](#3つのコンポーネント)
    - [システムアーキテクチャ](#システムアーキテクチャ)
    - [クイックスタート](#クイックスタート)
-2. [marker_tracker.py - データ提供サーバー](#marker_trackerpy---データ提供サーバー)
+2. [marker_server.py - データ提供サーバー](#marker_serverpy---データ提供サーバー)
    - [役割と機能](#役割と機能)
    - [動作モード](#動作モード)
    - [コマンドライン引数](#コマンドライン引数)
    - [HTTP API仕様](#http-api仕様)
    - [内部実装](#内部実装)
-   - [使用例](#使用例-marker_trackerpy)
-3. [marker_tracker_client.py - クライアントライブラリ](#marker_tracker_clientpy---クライアントライブラリ)
+   - [使用例](#使用例-marker_serverpy)
+3. [marker_client.py - クライアントライブラリ](#marker_clientpy---クライアントライブラリ)
    - [役割と機能](#役割と機能-1)
    - [クラス仕様](#クラス仕様)
    - [主要メソッド](#主要メソッド)
    - [ロボット位置計算ロジック](#ロボット位置計算ロジック)
-   - [使用例](#使用例-marker_tracker_clientpy)
+   - [使用例](#使用例-marker_clientpy)
 4. [marker_test.py - テスト・デバッグツール](#marker_testpy---テストデバッグツール)
    - [役割と機能](#役割と機能-2)
    - [コマンドライン引数](#コマンドライン引数-1)
@@ -48,8 +48,8 @@
 
 | コンポーネント | タイプ | 役割 | 実行方法 |
 |---------------|--------|------|---------|
-| **marker_tracker.py** | サーバー | OptiTrackからデータ取得→HTTP配信 | スタンドアロン実行（常駐） |
-| **marker_tracker_client.py** | ライブラリ | HTTPからデータ取得→Python API | インポートして使用 |
+| **marker_server.py** | サーバー | OptiTrackからデータ取得→HTTP配信 | スタンドアロン実行（常駐） |
+| **marker_client.py** | ライブラリ | HTTPからデータ取得→Python API | インポートして使用 |
 | **marker_test.py** | ツール | データ取得→コンソール表示 | スタンドアロン実行（デバッグ用） |
 
 ### システムアーキテクチャ
@@ -63,7 +63,7 @@
              │ NatNet Protocol (UDP 1510/1511)
              ▼
 ┌────────────────────────────────────────────────────────────┐
-│  marker_tracker.py                                         │
+│  marker_server.py                                         │
 │  ┌──────────────────────────────────────────────────────┐ │
 │  │ SimpleMarkerTracker クラス                           │ │
 │  │  - NatNetClient でデータ受信                         │ │
@@ -83,7 +83,7 @@
        ┌─────┴──────────────────────┐
        ▼                            ▼
 ┌────────────────────┐    ┌──────────────────────────────┐
-│ marker_test.py     │    │ marker_tracker_client.py     │
+│ marker_test.py     │    │ marker_client.py     │
 │                    │    │ (MarkerTrackerClient)        │
 │ - デバッグツール   │    │                              │
 │ - データ可視化     │    │ - HTTPクライアント           │
@@ -105,8 +105,8 @@
 #### 開発・テスト環境（OptiTrack不要）
 
 ```bash
-# ステップ1: marker_trackerをtestモードで起動
-python marker_tracker.py --mode test --port 6000
+# ステップ1: marker_serverをtestモードで起動
+python marker_server.py --mode test --port 6000
 
 # ステップ2: 動作確認（別ターミナル）
 python marker_test.py --host localhost --port 6000
@@ -123,8 +123,8 @@ python control_pc.py  # 内部でMarkerTrackerClientを使用
 # - Local Interface: <このPCのIP>
 # - Broadcast Frame Data: ON
 
-# ステップ2: marker_trackerを実機モードで起動
-python marker_tracker.py --mode server \
+# ステップ2: marker_serverを実機モードで起動
+python marker_server.py --mode server \
   --server-ip 192.168.1.100 \
   --client-ip 192.168.1.50 \
   --port 6000
@@ -135,11 +135,11 @@ python marker_test.py --host 192.168.1.50 --port 6000
 
 ---
 
-## marker_tracker.py - データ提供サーバー
+## marker_server.py - データ提供サーバー
 
 ### 役割と機能
 
-**marker_tracker.py** は、OptiTrackモーションキャプチャシステム（Motive）からNatNetプロトコルでマーカーデータを受信し、HTTP APIとして他のプログラムに提供するサーバープログラムです。
+**marker_server.py** は、OptiTrackモーションキャプチャシステム（Motive）からNatNetプロトコルでマーカーデータを受信し、HTTP APIとして他のプログラムに提供するサーバープログラムです。
 
 **主要機能**:
 1. **NatNet受信**: OptiTrackから120 FPS でマーカー3D座標を受信
@@ -148,7 +148,7 @@ python marker_test.py --host 192.168.1.50 --port 6000
 4. **テストモード**: OptiTrack不要でダミーデータを生成（開発用）
 5. **プリントモード**: コンソールにデータを定期出力（デバッグ用）
 
-**ファイルパス**: `marker_tracker.py` (744行)
+**ファイルパス**: `marker_server.py` (744行)
 
 **主要クラス**: `SimpleMarkerTracker`
 
@@ -156,7 +156,7 @@ python marker_test.py --host 192.168.1.50 --port 6000
 
 ### 動作モード
 
-marker_tracker.pyは3つの動作モードを持ちます。
+marker_server.pyは3つの動作モードを持ちます。
 
 #### 1. serverモード（デフォルト）
 
@@ -170,13 +170,13 @@ marker_tracker.pyは3つの動作モードを持ちます。
 
 **起動コマンド**:
 ```bash
-python marker_tracker.py --mode server \
+python marker_server.py --mode server \
   --server-ip <Motive_IP> \
   --client-ip <THIS_PC_IP> \
   --port 6000
 ```
 
-**実装箇所**: `marker_tracker.py:630-650`
+**実装箇所**: `marker_server.py:630-650`
 
 ---
 
@@ -192,7 +192,7 @@ python marker_tracker.py --mode server \
 
 **起動コマンド**:
 ```bash
-python marker_tracker.py --mode print \
+python marker_server.py --mode print \
   --server-ip <Motive_IP> \
   --client-ip <THIS_PC_IP> \
   --interval 1.0
@@ -221,7 +221,7 @@ python marker_tracker.py --mode print \
     ...
 ```
 
-**実装箇所**: `marker_tracker.py:612-629`
+**実装箇所**: `marker_server.py:612-629`
 
 ---
 
@@ -237,7 +237,7 @@ python marker_tracker.py --mode print \
 
 **起動コマンド**:
 ```bash
-python marker_tracker.py --mode test --port 6000
+python marker_server.py --mode test --port 6000
 ```
 
 **出力例**:
@@ -258,9 +258,9 @@ HTTPサーバを起動しています...
 - 周期的な動き: sin/cos関数で位置が変化
 
 **実装箇所**:
-- モード処理: `marker_tracker.py:652-674`
-- ダミーデータ生成: `marker_tracker.py:340-468`
-- データ更新スレッド: `marker_tracker.py:470-487`
+- モード処理: `marker_server.py:652-674`
+- ダミーデータ生成: `marker_server.py:340-468`
+- データ更新スレッド: `marker_server.py:470-487`
 
 ---
 
@@ -285,15 +285,15 @@ HTTPサーバを起動しています...
 # 環境変数で設定
 export NATNET_SERVER_IP=192.168.1.100
 export NATNET_CLIENT_IP=192.168.1.50
-python marker_tracker.py --mode server
+python marker_server.py --mode server
 
 # コマンドライン引数で設定（環境変数を上書き）
-python marker_tracker.py --mode server \
+python marker_server.py --mode server \
   --server-ip 192.168.1.100 \
   --client-ip 192.168.1.50
 ```
 
-**実装箇所**: `marker_tracker.py:721-741`
+**実装箇所**: `marker_server.py:721-741`
 
 ---
 
@@ -357,7 +357,7 @@ python marker_tracker.py --mode server \
 curl http://localhost:6000/latest | jq .
 ```
 
-**実装箇所**: `marker_tracker.py:500-513`
+**実装箇所**: `marker_server.py:500-513`
 
 ---
 
@@ -413,7 +413,7 @@ curl http://localhost:6000/latest | jq .
 curl "http://localhost:6000/marker_set?name=robot_head" | jq .
 ```
 
-**実装箇所**: `marker_tracker.py:515-563`
+**実装箇所**: `marker_server.py:515-563`
 
 ---
 
@@ -472,13 +472,13 @@ class SimpleMarkerTracker:
         """安全なシャットダウン処理"""
 ```
 
-**ファイルパス**: `marker_tracker.py:88-719`
+**ファイルパス**: `marker_server.py:88-719`
 
 ---
 
 #### スレッド構成
 
-marker_tracker.pyは複数のスレッドで動作します。
+marker_server.pyは複数のスレッドで動作します。
 
 **serverモード / testモード**:
 ```
@@ -504,9 +504,9 @@ marker_tracker.pyは複数のスレッドで動作します。
 - daemon=True で親プロセス終了時に自動終了
 
 **実装箇所**:
-- ロック: `marker_tracker.py:116`
-- HTTPスレッド起動: `marker_tracker.py:633-634, 658-659`
-- テストスレッド起動: `marker_tracker.py:662-663`
+- ロック: `marker_server.py:116`
+- HTTPスレッド起動: `marker_server.py:633-634, 658-659`
+- テストスレッド起動: `marker_server.py:662-663`
 
 ---
 
@@ -517,7 +517,7 @@ marker_tracker.pyは複数のスレッドで動作します。
 - シリアライズ失敗時もサーバー継続
 
 ```python
-# bytes文字列のデコード（marker_tracker.py:280-291）
+# bytes文字列のデコード（marker_server.py:280-291）
 if isinstance(name, bytes):
     try:
         name = name.decode('utf-8')
@@ -533,7 +533,7 @@ if isinstance(name, bytes):
 - エラー詳細をJSONで返却
 
 ```python
-# marker_tracker.py:572-586
+# marker_server.py:572-586
 except Exception as e:
     err = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
     self.send_response(500)
@@ -547,7 +547,7 @@ except Exception as e:
 - Ctrl+C での確実な終了
 
 ```python
-# marker_tracker.py:697-719
+# marker_server.py:697-719
 def safe_shutdown(self):
     try:
         if (hasattr(self.natnet_client, 'command_socket') and
@@ -561,12 +561,12 @@ def safe_shutdown(self):
 
 ---
 
-### 使用例 (marker_tracker.py)
+### 使用例 (marker_server.py)
 
 #### 例1: テストモードで起動（開発・テスト用）✅
 
 ```bash
-python marker_tracker.py --mode test --port 6000
+python marker_server.py --mode test --port 6000
 ```
 
 **出力**:
@@ -592,7 +592,7 @@ curl http://localhost:6000/latest | jq '.snapshot.marker_sets[] | select(.name =
 #### 例2: 実機モードで起動（OptiTrack接続）
 
 ```bash
-python marker_tracker.py --mode server \
+python marker_server.py --mode server \
   --server-ip 192.168.1.100 \
   --client-ip 192.168.1.50 \
   --port 6000
@@ -618,7 +618,7 @@ NatNetに接続中...
 #### 例3: プリントモードで起動（デバッグ用）
 
 ```bash
-python marker_tracker.py --mode print \
+python marker_server.py --mode print \
   --server-ip 192.168.1.100 \
   --client-ip 192.168.1.50 \
   --interval 0.5
@@ -647,20 +647,20 @@ python marker_tracker.py --mode print \
 
 ---
 
-## marker_tracker_client.py - クライアントライブラリ
+## marker_client.py - クライアントライブラリ
 
 ### 役割と機能
 
-**marker_tracker_client.py** は、marker_tracker.pyが提供するHTTP APIにアクセスし、ロボット位置や障害物情報を取得するPythonライブラリです。`control_pc.py`で使用されます。
+**marker_client.py** は、marker_server.pyが提供するHTTP APIにアクセスし、ロボット位置や障害物情報を取得するPythonライブラリです。`control_pc.py`で使用されます。
 
 **主要機能**:
-1. **HTTPクライアント**: marker_tracker.pyからデータ取得
+1. **HTTPクライアント**: marker_server.pyからデータ取得
 2. **ロボット位置計算**: robot_bodyとrobot_headから位置・方向を計算
 3. **障害物取得**: obstaclesマーカーセットから障害物座標を取得
 4. **エラーハンドリング**: 接続エラー、タイムアウト、JSONデコードエラーに対応
-5. **接続テスト**: marker_trackerへの接続確認
+5. **接続テスト**: marker_serverへの接続確認
 
-**ファイルパス**: `marker_tracker_client.py` (441行)
+**ファイルパス**: `marker_client.py` (441行)
 
 **主要クラス**: `MarkerTrackerClient`
 
@@ -673,14 +673,14 @@ python marker_tracker.py --mode print \
 ```python
 class MarkerTrackerClient:
     """
-    marker_tracker.py (HTTPサーバー) からマーカーデータを取得するクライアント
+    marker_server.py (HTTPサーバー) からマーカーデータを取得するクライアント
     """
 
     def __init__(self, host='localhost', port=6000, timeout=5.0):
         """
         Args:
-            host (str): marker_trackerのホスト
-            port (int): marker_trackerのポート
+            host (str): marker_serverのホスト
+            port (int): marker_serverのポート
             timeout (float): HTTPリクエストのタイムアウト（秒）
         """
         self.host = host
@@ -689,7 +689,7 @@ class MarkerTrackerClient:
         self.timeout = timeout
 ```
 
-**実装箇所**: `marker_tracker_client.py:35-54`
+**実装箇所**: `marker_client.py:35-54`
 
 ---
 
@@ -736,7 +736,7 @@ if result and result['ok']:
 - タイムアウト → `None` を返す
 - JSONデコードエラー → `None` を返す
 
-**実装箇所**: `marker_tracker_client.py:56-96`
+**実装箇所**: `marker_client.py:56-96`
 
 ---
 
@@ -780,7 +780,7 @@ if result and result['ok'] and result['found']:
         print(f"  マーカー{i+1}: ({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f})")
 ```
 
-**実装箇所**: `marker_tracker_client.py:98-144`
+**実装箇所**: `marker_client.py:98-144`
 
 ---
 
@@ -835,7 +835,7 @@ if position:
     print(f"pd（頭部方向）: {position['pd']:.1f}度")
 ```
 
-**実装箇所**: `marker_tracker_client.py:146-240`
+**実装箇所**: `marker_client.py:146-240`
 
 ---
 
@@ -872,13 +872,13 @@ for i in range(len(obs_x)):
 - マーカーセットが見つからない場合は空配列 `(np.array([]), np.array([]))` を返す
 - z座標は無視（2次元平面のみ）
 
-**実装箇所**: `marker_tracker_client.py:321-360`
+**実装箇所**: `marker_client.py:321-360`
 
 ---
 
 #### 5. `test_connection()` - 接続テスト
 
-**説明**: marker_trackerへの接続テストを実行
+**説明**: marker_serverへの接続テストを実行
 
 **シグネチャ**:
 ```python
@@ -901,14 +901,14 @@ else:
 
 **出力例**:
 ```
-marker_tracker接続テスト: http://localhost:6000
+marker_server接続テスト: http://localhost:6000
 ✓ 接続成功: フレーム=871510, タイムスタンプ=1705384212.345
   マーカーセット数: 3
   利用可能なマーカーセット: ['robot_body', 'robot_head', 'obstacles']
   剛体数: 2
 ```
 
-**実装箇所**: `marker_tracker_client.py:362-398`
+**実装箇所**: `marker_client.py:362-398`
 
 ---
 
@@ -927,7 +927,7 @@ body_pos = body_markers_array[max_z_idx]
 # body_pos = [x, y, z]
 ```
 
-**実装箇所**: `marker_tracker_client.py:186-188`
+**実装箇所**: `marker_client.py:186-188`
 
 **理由**: ロボット本体の最も高い点（頭部に最も近い点）をロボット位置とするため
 
@@ -943,7 +943,7 @@ head_pos = head_markers_array[middle_idx]
 # head_pos = [x, y, z]
 ```
 
-**実装箇所**: `marker_tracker_client.py:212-213`
+**実装箇所**: `marker_client.py:212-213`
 
 **`_find_middle_point()` の内部処理**:
 ```python
@@ -973,7 +973,7 @@ def _find_middle_point(self, points: np.ndarray) -> int:
     return middle_idx
 ```
 
-**実装箇所**: `marker_tracker_client.py:242-276`
+**実装箇所**: `marker_client.py:242-276`
 
 **理由**: 3点が直線上に並んでいると仮定し、主成分分析（PCA）で主軸方向を求め、その方向に射影した値でソートして中央の点を選択
 
@@ -992,7 +992,7 @@ if pd < 0:
     pd += 360
 ```
 
-**実装箇所**: `marker_tracker_client.py:219-224`
+**実装箇所**: `marker_client.py:219-224`
 
 **意味**: ロボット本体から頭部への方向を表す角度（ロボットが向いている方向）
 
@@ -1030,7 +1030,7 @@ def _calculate_head_direction(self, head_markers: np.ndarray) -> float:
     return float(fd)
 ```
 
-**実装箇所**: `marker_tracker_client.py:278-319`
+**実装箇所**: `marker_client.py:278-319`
 
 **意味**: ロボット頭部の3点が並ぶ方向（パルス放射方向）
 
@@ -1064,19 +1064,19 @@ fd（放射方向）: head 3点の主軸方向（直線の向き）
 
 ---
 
-### 使用例 (marker_tracker_client.py)
+### 使用例 (marker_client.py)
 
 #### 例1: ロボット位置と障害物を取得
 
 ```python
-from marker_tracker_client import MarkerTrackerClient
+from marker_client import MarkerTrackerClient
 
 # クライアント初期化
 client = MarkerTrackerClient(host='localhost', port=6000)
 
 # 接続テスト
 if not client.test_connection():
-    print("marker_trackerに接続できません")
+    print("marker_serverに接続できません")
     exit(1)
 
 # ロボット位置を取得
@@ -1102,7 +1102,7 @@ for i in range(len(obs_x)):
 **出力例**:
 ```
 MarkerTrackerClient初期化: http://localhost:6000
-marker_tracker接続テスト: http://localhost:6000
+marker_server接続テスト: http://localhost:6000
 ✓ 接続成功: フレーム=871510, タイムスタンプ=1705384212.345
   マーカーセット数: 3
   利用可能なマーカーセット: ['robot_body', 'robot_head', 'obstacles']
@@ -1136,32 +1136,32 @@ marker_tracker接続テスト: http://localhost:6000
 
 ```python
 # control_pc.py の一部（簡略版）
-from marker_tracker_client import MarkerTrackerClient
+from marker_client import MarkerTrackerClient
 
 class ControlPC:
     def __init__(self, ...):
         # MarkerTrackerClientの初期化
-        self.marker_tracker = MarkerTrackerClient(
+        self.marker_server = MarkerTrackerClient(
             host='localhost',
             port=6000,
             timeout=5.0
         )
 
         # 初期位置を取得
-        initial_position = self.get_robot_position_from_marker_tracker()
+        initial_position = self.get_robot_position_from_marker_server()
 
         # 障害物を取得
-        obs_x, obs_y = self.marker_tracker.get_obstacles('obstacles')
+        obs_x, obs_y = self.marker_server.get_obstacles('obstacles')
 
         # Worldオブジェクトに設定
         self.world = World(...)
         self.world.obs_x = obs_x
         self.world.obs_y = obs_y
 
-    def get_robot_position_from_marker_tracker(self):
-        """marker_trackerからロボット位置を取得"""
+    def get_robot_position_from_marker_server(self):
+        """marker_serverからロボット位置を取得"""
         try:
-            position = self.marker_tracker.get_robot_position(
+            position = self.marker_server.get_robot_position(
                 body_marker_set='robot_body',
                 head_marker_set='robot_head'
             )
@@ -1178,7 +1178,7 @@ class ControlPC:
                 return {'x': 0.0, 'y': 0.0, 'fd': 90.0, 'pd': 0.0}
 
         except Exception as e:
-            print(f"[WARNING] marker_tracker接続失敗: {e}")
+            print(f"[WARNING] marker_server接続失敗: {e}")
             return {'x': 0.0, 'y': 0.0, 'fd': 90.0, 'pd': 0.0}
 ```
 
@@ -1188,14 +1188,14 @@ class ControlPC:
 
 #### 例3: スタンドアロンテスト
 
-marker_tracker_client.pyはスタンドアロンで実行可能です。
+marker_client.pyはスタンドアロンで実行可能です。
 
 ```bash
-# 事前にmarker_trackerをtestモードで起動
-python marker_tracker.py --mode test --port 6000
+# 事前にmarker_serverをtestモードで起動
+python marker_server.py --mode test --port 6000
 
 # 別ターミナルでテスト実行
-python marker_tracker_client.py
+python marker_client.py
 ```
 
 **出力例**:
@@ -1203,8 +1203,8 @@ python marker_tracker_client.py
 ╔══════════════════════════════════════════════════════════╗
 ║        MarkerTrackerClient テスト                        ║
 ║                                                          ║
-║  事前に marker_tracker.py をtestモードで起動:            ║
-║  python marker_tracker.py --mode test --port 6000        ║
+║  事前に marker_server.py をtestモードで起動:            ║
+║  python marker_server.py --mode test --port 6000        ║
 ╚══════════════════════════════════════════════════════════╝
 
 MarkerTrackerClient初期化: http://localhost:6000
@@ -1212,7 +1212,7 @@ MarkerTrackerClient初期化: http://localhost:6000
 ============================================================
 1. 接続テスト
 ============================================================
-marker_tracker接続テスト: http://localhost:6000
+marker_server接続テスト: http://localhost:6000
 ✓ 接続成功: フレーム=871510, タイムスタンプ=1705384212.345
   マーカーセット数: 3
   利用可能なマーカーセット: ['robot_body', 'robot_head', 'obstacles']
@@ -1243,7 +1243,7 @@ marker_tracker接続テスト: http://localhost:6000
 最初の障害物: x=2.500m, y=1.500m
 ```
 
-**実装箇所**: `marker_tracker_client.py:402-441`
+**実装箇所**: `marker_client.py:402-441`
 
 ---
 
@@ -1251,7 +1251,7 @@ marker_tracker接続テスト: http://localhost:6000
 
 ### 役割と機能
 
-**marker_test.py** は、marker_tracker.pyの動作確認とデバッグを行うためのスタンドアロンツールです。HTTPでデータを取得し、見やすい形式でコンソールに表示します。
+**marker_test.py** は、marker_server.pyの動作確認とデバッグを行うためのスタンドアロンツールです。HTTPでデータを取得し、見やすい形式でコンソールに表示します。
 
 **主要機能**:
 1. **全データ表示**: `/latest` エンドポイントから全データを取得して整形表示
@@ -1269,8 +1269,8 @@ marker_tracker接続テスト: http://localhost:6000
 
 | 引数 | 型 | デフォルト | 説明 |
 |------|-------|-----------|------|
-| `--host` | str | `localhost` | marker_trackerのホスト |
-| `--port` | int | `6000` | marker_trackerのポート |
+| `--host` | str | `localhost` | marker_serverのホスト |
+| `--port` | int | `6000` | marker_serverのポート |
 | `--interval` | float | `1.0` | ポーリング間隔（秒） |
 | `--raw` | flag | `False` | 生のJSONで出力（整形なし） |
 | `--model` | str | `None` | 特定マーカーセットのみ表示（例: `robot_head`） |
@@ -1361,7 +1361,7 @@ python marker_test.py --host localhost --port 6000
 ...
 ```
 
-**用途**: marker_tracker.pyが正常に動作しているか確認
+**用途**: marker_server.pyが正常に動作しているか確認
 
 ---
 
@@ -1420,7 +1420,7 @@ python marker_test.py --host localhost --port 6000 --interval 0.5
 python marker_test.py --host 192.168.1.50 --port 6000
 ```
 
-**用途**: 別PCで動作しているmarker_tracker.pyを監視
+**用途**: 別PCで動作しているmarker_server.pyを監視
 
 ---
 
@@ -1428,7 +1428,7 @@ python marker_test.py --host 192.168.1.50 --port 6000
 
 ### スナップショット構造
 
-marker_tracker.pyが提供するスナップショットの完全な構造を以下に示します。
+marker_server.pyが提供するスナップショットの完全な構造を以下に示します。
 
 ```python
 {
@@ -1483,7 +1483,7 @@ marker_tracker.pyが提供するスナップショットの完全な構造を以
 }
 ```
 
-**実装箇所**: `marker_tracker.py:245-333`
+**実装箇所**: `marker_server.py:245-333`
 
 ---
 
@@ -1649,13 +1649,13 @@ fd = arctan2(principal_axis_y, principal_axis_x)
 
 ### 開発・テスト環境
 
-**前提**: OptiTrack不要、marker_trackerのtestモードを使用
+**前提**: OptiTrack不要、marker_serverのtestモードを使用
 
 #### ワークフロー1: システム全体のテスト
 
 ```bash
-# ターミナル1: marker_trackerをtestモードで起動
-python marker_tracker.py --mode test --port 6000
+# ターミナル1: marker_serverをtestモードで起動
+python marker_server.py --mode test --port 6000
 
 # ターミナル2: marker_testでデータ確認（オプション）
 python marker_test.py --host localhost --port 6000
@@ -1668,21 +1668,21 @@ python robot_simulator.py 20
 ```
 
 **期待される出力**:
-- marker_tracker: HTTPサーバー起動、120 FPSでダミーデータ生成
+- marker_server: HTTPサーバー起動、120 FPSでダミーデータ生成
 - marker_test: 1秒ごとにマーカーデータを表示
 - control_pc: ロボット位置・障害物取得、TCP待機
 - robot_simulator: 20ステップ実行、エコーデータ送信→移動指令受信
 
 ---
 
-#### ワークフロー2: marker_tracker_clientのテスト
+#### ワークフロー2: marker_clientのテスト
 
 ```bash
-# ターミナル1: marker_trackerをtestモードで起動
-python marker_tracker.py --mode test --port 6000
+# ターミナル1: marker_serverをtestモードで起動
+python marker_server.py --mode test --port 6000
 
-# ターミナル2: marker_tracker_clientのテスト実行
-python marker_tracker_client.py
+# ターミナル2: marker_clientのテスト実行
+python marker_client.py
 ```
 
 **期待される出力**:
@@ -1733,8 +1733,8 @@ MarkerTrackerClient初期化: http://localhost:6000
 
 **起動手順**:
 ```bash
-# ターミナル1: marker_trackerを実機モードで起動
-python marker_tracker.py --mode server \
+# ターミナル1: marker_serverを実機モードで起動
+python marker_server.py --mode server \
   --server-ip 192.168.1.100 \
   --client-ip 192.168.1.50 \
   --port 6000
@@ -1749,7 +1749,7 @@ python control_pc.py
 ```
 
 **期待される出力**:
-- marker_tracker: NatNet接続成功、HTTPサーバー起動
+- marker_server: NatNet接続成功、HTTPサーバー起動
 - marker_test: robot_headのマーカー3個を1秒ごとに表示
 - control_pc: 実機からロボット位置取得、TCP待機
 - 実機ロボット: エコーセンシング→control_pcに送信→移動指令受信→移動実行
@@ -1781,23 +1781,23 @@ python marker_test.py --host localhost --port 6000
 
 ---
 
-#### デバッグシナリオ2: marker_trackerに接続できない
+#### デバッグシナリオ2: marker_serverに接続できない
 
 **症状**:
 ```
-✗ marker_tracker接続エラー: [Errno 61] Connection refused
+✗ marker_server接続エラー: [Errno 61] Connection refused
 ```
 
 **デバッグ手順**:
 ```bash
-# 1. marker_trackerが起動しているか確認
-ps aux | grep marker_tracker
+# 1. marker_serverが起動しているか確認
+ps aux | grep marker_server
 
 # 2. ポートが正しいか確認
 netstat -an | grep 6000
 
-# 3. marker_trackerを起動
-python marker_tracker.py --mode test --port 6000
+# 3. marker_serverを起動
+python marker_server.py --mode test --port 6000
 
 # 4. 再度接続テスト
 python marker_test.py --host localhost --port 6000
@@ -1827,14 +1827,14 @@ python marker_test.py --host localhost --port 6000 --model robot_head
 # 3. Motive側でマーカーの配置を調整
 
 # 4. 再度確認
-python marker_tracker_client.py
+python marker_client.py
 ```
 
 ---
 
 ## トラブルシューティング
 
-### 問題1: marker_tracker.pyが起動しない
+### 問題1: marker_server.pyが起動しない
 
 #### エラー: NatNetClient が見つかりません
 
@@ -1849,10 +1849,10 @@ ModuleNotFoundError: NatNetClient が見つかりません。NatNetSDK の Pytho
 **解決策**:
 1. NatNetSDKをダウンロード・展開
 2. `NatNetSDK/Samples/PythonClient/` ディレクトリが存在することを確認
-3. marker_tracker.pyの以下の行を環境に合わせて修正:
+3. marker_server.pyの以下の行を環境に合わせて修正:
 
 ```python
-# marker_tracker.py:72-76
+# marker_server.py:72-76
 _this_dir = os.path.dirname(os.path.abspath(__file__))
 _repo_root = os.path.abspath(os.path.join(_this_dir, os.pardir))
 _natnet_py_dir = os.path.join(_repo_root, 'NatNetSDK', 'Samples', 'PythonClient')
@@ -1863,7 +1863,7 @@ if _natnet_py_dir not in sys.path:
 または、環境変数PYTHONPATHを設定:
 ```bash
 export PYTHONPATH="/path/to/NatNetSDK/Samples/PythonClient:$PYTHONPATH"
-python marker_tracker.py --mode test --port 6000
+python marker_server.py --mode test --port 6000
 ```
 
 ---
@@ -1886,7 +1886,7 @@ lsof -i :6000
 kill -9 <PID>
 
 # または、別のポートを使用
-python marker_tracker.py --mode test --port 6001
+python marker_server.py --mode test --port 6001
 ```
 
 ---
@@ -1928,12 +1928,12 @@ python marker_tracker.py --mode test --port 6001
 4. **接続テスト**:
    ```bash
    # Unicast（推奨）
-   python marker_tracker.py --mode print \
+   python marker_server.py --mode print \
      --server-ip 192.168.1.100 \
      --client-ip 192.168.1.50
 
    # Multicast（ネットワーク設定が複雑な場合）
-   python marker_tracker.py --mode print \
+   python marker_server.py --mode print \
      --server-ip 192.168.1.100 \
      --client-ip 192.168.1.50 \
      --multicast
@@ -1973,7 +1973,7 @@ python marker_tracker.py --mode test --port 6001
 3. **コード側でマーカーセット名を変更**:
    ```python
    # control_pc.py
-   position = self.marker_tracker.get_robot_position(
+   position = self.marker_server.get_robot_position(
        body_marker_set='RobotBody',   # 実際の名前に合わせる
        head_marker_set='RobotHead'
    )
@@ -2006,7 +2006,7 @@ python marker_tracker.py --mode test --port 6001
 
 2. **180度反転の補正**:
    ```python
-   # marker_tracker_client.py の _calculate_head_direction() に追加
+   # marker_client.py の _calculate_head_direction() に追加
    # pdとfdの整合性をチェック
    if abs(fd - pd) > 90 and abs(fd - pd) < 270:
        fd = (fd + 180) % 360  # 180度反転
@@ -2024,22 +2024,22 @@ python marker_tracker.py --mode test --port 6001
 
 **症状**:
 ```
-✗ marker_tracker接続エラー: timed out
+✗ marker_server接続エラー: timed out
 ```
 
 **原因**:
-- marker_trackerの処理が遅い
+- marker_serverの処理が遅い
 - ネットワーク遅延
 - データ量が大きすぎる
 
 **解決策**:
 1. **タイムアウト時間を延長**:
    ```python
-   # marker_tracker_client.py
+   # marker_client.py
    client = MarkerTrackerClient(host='localhost', port=6000, timeout=10.0)  # 5秒→10秒
    ```
 
-2. **marker_trackerのパフォーマンスを確認**:
+2. **marker_serverのパフォーマンスを確認**:
    ```bash
    # HTTPサーバーの応答時間を測定
    time curl http://localhost:6000/latest
@@ -2066,9 +2066,9 @@ python marker_tracker.py --mode test --port 6001
    - 右クリック > Rigid Body > Create From Selected Markers
    - 名前を `obstacles_dynamic` に設定
 
-2. **marker_tracker_client.pyに新しいメソッドを追加**:
+2. **marker_client.pyに新しいメソッドを追加**:
    ```python
-   # marker_tracker_client.py に追加
+   # marker_client.py に追加
    def get_dynamic_obstacles(self, marker_set_name='obstacles_dynamic'):
        """
        動的障害物をマーカーセットから取得
@@ -2093,7 +2093,7 @@ python marker_tracker.py --mode test --port 6001
 3. **control_pc.pyで使用**:
    ```python
    # control_pc.py の __init__() に追加
-   dynamic_obs_x, dynamic_obs_y = self.marker_tracker.get_dynamic_obstacles()
+   dynamic_obs_x, dynamic_obs_y = self.marker_server.get_dynamic_obstacles()
    print(f"動的障害物数: {len(dynamic_obs_x)}")
    ```
 
@@ -2101,12 +2101,12 @@ python marker_tracker.py --mode test --port 6001
 
 #### 新しいエンドポイントを追加
 
-**シナリオ**: `/health` エンドポイントを追加して、marker_trackerの健全性をチェックしたい
+**シナリオ**: `/health` エンドポイントを追加して、marker_serverの健全性をチェックしたい
 
 **手順**:
-1. **marker_tracker.pyに新しいハンドラーを追加**:
+1. **marker_server.pyに新しいハンドラーを追加**:
    ```python
-   # marker_tracker.py の Handler.do_GET() に追加
+   # marker_server.py の Handler.do_GET() に追加
    if path == "/health":
        # 健全性チェック
        snapshot = tracker.get_latest_snapshot()
@@ -2127,11 +2127,11 @@ python marker_tracker.py --mode test --port 6001
        return
    ```
 
-2. **marker_tracker_client.pyに新しいメソッドを追加**:
+2. **marker_client.pyに新しいメソッドを追加**:
    ```python
-   # marker_tracker_client.py に追加
+   # marker_client.py に追加
    def check_health(self) -> bool:
-       """marker_trackerの健全性をチェック"""
+       """marker_serverの健全性をチェック"""
        url = f"{self.base_url}/health"
 
        try:
@@ -2155,9 +2155,9 @@ python marker_tracker.py --mode test --port 6001
    client = MarkerTrackerClient(host='localhost', port=6000)
 
    if client.check_health():
-       print("marker_tracker is healthy")
+       print("marker_server is healthy")
    else:
-       print("marker_tracker is unhealthy")
+       print("marker_server is unhealthy")
    ```
 
 ---
@@ -2170,7 +2170,7 @@ python marker_tracker.py --mode test --port 6001
 
 **解決策**: testモードでデータ更新頻度を削減
 ```python
-# marker_tracker.py の update_test_data() を変更
+# marker_server.py の update_test_data() を変更
 def update_test_data(self):
     frame_number = 0
     update_interval = 1.0 / 30.0  # 120 FPS → 30 FPS
@@ -2193,7 +2193,7 @@ def update_test_data(self):
 
 **解決策**: JSONレスポンスをキャッシュ
 ```python
-# marker_tracker.py の SimpleMarkerTracker に追加
+# marker_server.py の SimpleMarkerTracker に追加
 def __init__(self, ...):
     ...
     self._cached_json = None
@@ -2234,7 +2234,7 @@ testモードで生成されるダミーデータの詳細仕様を以下に示�
 #### ダミーデータの生成ロジック
 
 ```python
-# marker_tracker.py:340-468
+# marker_server.py:340-468
 def generate_test_snapshot(self, frame_number):
     ts = time.time()
 
@@ -2296,16 +2296,16 @@ def generate_test_snapshot(self, frame_number):
 
 ## まとめ
 
-このドキュメントでは、OptiTrackマーカートラッキングシステムの3つのコンポーネント（marker_tracker.py、marker_tracker_client.py、marker_test.py）について詳細に説明しました。
+このドキュメントでは、OptiTrackマーカートラッキングシステムの3つのコンポーネント（marker_server.py、marker_client.py、marker_test.py）について詳細に説明しました。
 
 ### 主要なポイント
 
-1. **marker_tracker.py**: OptiTrackからデータを取得しHTTPで配信するサーバー
+1. **marker_server.py**: OptiTrackからデータを取得しHTTPで配信するサーバー
    - 3つの動作モード（server, print, test）
    - testモードでOptiTrack不要で開発可能
    - `/latest` と `/marker_set` エンドポイント
 
-2. **marker_tracker_client.py**: HTTPからデータを取得するPythonライブラリ
+2. **marker_client.py**: HTTPからデータを取得するPythonライブラリ
    - control_pc.pyで使用
    - ロボット位置・方向の計算ロジック（PCA使用）
    - 障害物座標の取得
@@ -2319,8 +2319,8 @@ def generate_test_snapshot(self, frame_number):
 
 **開発・テスト時**:
 ```bash
-# marker_trackerをtestモードで起動
-python marker_tracker.py --mode test --port 6000
+# marker_serverをtestモードで起動
+python marker_server.py --mode test --port 6000
 
 # control_pcを起動（内部でMarkerTrackerClientを使用）
 python control_pc.py
@@ -2328,8 +2328,8 @@ python control_pc.py
 
 **実機運用時**:
 ```bash
-# marker_trackerを実機モードで起動
-python marker_tracker.py --mode server \
+# marker_serverを実機モードで起動
+python marker_server.py --mode server \
   --server-ip <Motive_IP> \
   --client-ip <THIS_PC_IP> \
   --port 6000

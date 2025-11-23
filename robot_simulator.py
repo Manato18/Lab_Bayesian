@@ -244,7 +244,7 @@ if __name__ == "__main__":
 ║     ロボットシミュレータ（Golang風）                     ║
 ║                                                          ║
 ║  事前に以下を起動してください:                           ║
-║    1. marker_tracker.py --mode test --port 6000          ║
+║    1. marker_server.py --mode test --port 6000           ║
 ║    2. control_pc.py                                      ║
 ║                                                          ║
 ║  このシミュレータは実機ロボット（Golang）の動作を        ║

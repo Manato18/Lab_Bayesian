@@ -5,7 +5,7 @@ Control PC - 制御PC
 このプログラムはベイズ推論と回避計算を担当します。
 
 機能:
-1. marker_trackerからロボットの位置を取得
+1. marker_serverからロボットの位置を取得
 2. ロボットからの物体定位情報を受信
 3. ベイズ推論で事後確率を更新
 4. 回避方向を計算
@@ -18,6 +18,8 @@ import json
 import numpy as np
 import os
 import base64
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 from bayes_code import config
 from bayes_code.world import World
 from bayes_code.bayesian import Bayesian
@@ -25,8 +27,7 @@ from bayes_code.agent import Agent, Obj
 from bayes_code.calc import r_theta_matrix, real_dist_goback_matrix, dist_attenuation, direc_attenuation, sigmoid, ear_posit, r_theta_to_XY_calc, real_dist_goback, space_echo_translater
 from bayes_code.localization import Localizer
 from bayes_code.robot_visualize import BatVisualizer
-from marker_tracker_client import MarkerTrackerClient
-
+from marker_client import MarkerTrackerClient
 
 class ControlPC:
     """
@@ -35,15 +36,15 @@ class ControlPC:
     """
 
     def __init__(self, host='localhost', port=6001,
-                 marker_tracker_host='localhost', marker_tracker_port=6000):
+                 marker_server_host='localhost', marker_server_port=6000):
         """
         制御PCの初期化
 
         Args:
             host (str): 制御PCのホスト
             port (int): 制御PCのポート
-            marker_tracker_host (str): marker_trackerのホスト
-            marker_tracker_port (int): marker_trackerのポート
+            marker_server_host (str): marker_serverのホスト
+            marker_server_port (int): marker_serverのポート
         """
         self.host = host
         self.port = port
@@ -55,17 +56,17 @@ class ControlPC:
         # MarkerTrackerClient初期化
         print("MarkerTrackerClient初期化中...")
         self.marker_tracker = MarkerTrackerClient(
-            host=marker_tracker_host,
-            port=marker_tracker_port
+            host=marker_server_host,
+            port=marker_server_port
         )
         print("✓ MarkerTrackerClient初期化完了")
 
         # 接続テスト
-        print("marker_trackerへの接続を確認中...")
+        print("marker_serverへの接続を確認中...")
         if not self.marker_tracker.test_connection():
-            print("警告: marker_trackerへの接続に失敗しました")
-            print("  marker_tracker.pyが起動していることを確認してください")
-            print("  テストモード: python marker_tracker.py --mode test --port 6000")
+            print("警告: marker_serverへの接続に失敗しました")
+            print("  marker_server.pyが起動していることを確認してください")
+            print("  テストモード: python marker_server.py --mode test --port 6000")
 
         # World初期化（障害物データはまだ読み込まない）
         print("World初期化中...")
@@ -80,17 +81,17 @@ class ControlPC:
             folder_name=config.folder_name
         )
 
-        # 障害物をmarker_trackerから取得（'obstacles'マーカーセットから）
-        print("marker_trackerから障害物情報を取得中...")
+        # 障害物をmarker_serverから取得（'obstacles'マーカーセットから）
+        print("marker_serverから障害物情報を取得中...")
         obs_x, obs_y = self.marker_tracker.get_obstacles('obstacles')
 
         if len(obs_x) > 0:
-            # marker_trackerから取得した障害物データで上書き
+            # marker_serverから取得した障害物データで上書き
             self.world.pole_x = obs_x
             self.world.pole_y = obs_y
             print(f"✓ 障害物データ取得完了: {len(obs_x)}個")
         else:
-            print("警告: marker_trackerから障害物を取得できませんでした")
+            print("警告: marker_serverから障害物を取得できませんでした")
             print("  障害物全てを選択して'obstacles'という名前のマーカーセットを作成してください")
             # Worldが既に読み込んでいるCSVデータを使用（もしあれば）
             if self.world.pole_x is not None and len(self.world.pole_x) > 0:
@@ -109,16 +110,16 @@ class ControlPC:
         )
         print("✓ Bayesian初期化完了")
 
-        # marker_trackerからロボットの初期位置を取得
-        print("marker_trackerからロボット初期位置を取得中...")
-        init_pos_data = self.get_robot_position_from_marker_tracker(
+        # marker_serverからロボットの初期位置を取得
+        print("marker_serverからロボット初期位置を取得中...")
+        init_pos_data = self.get_robot_position_from_marker_server(
             body_marker_set='robot_body',
             head_marker_set='robot_head'
         )
 
         if init_pos_data is None:
             # フォールバック: configの初期値を使用
-            print("警告: marker_trackerから位置取得失敗、config初期値を使用")
+            print("警告: marker_serverから位置取得失敗、config初期値を使用")
             init_pos = config.init_pos
         else:
             init_pos = [init_pos_data['x'], init_pos_data['y'],
@@ -207,10 +208,10 @@ class ControlPC:
         print("  ※ 新形式（相互相関配列）に対応")
         print("=" * 60)
 
-    def get_robot_position_from_marker_tracker(self, body_marker_set='robot_body',
+    def get_robot_position_from_marker_server(self, body_marker_set='robot_body',
                                                head_marker_set='robot_head'):
         """
-        marker_trackerからロボット位置を取得
+        marker_serverからロボット位置を取得
 
         Args:
             body_marker_set (str): ロボット本体のマーカーセット名
@@ -237,7 +238,7 @@ class ControlPC:
             }
 
         except Exception as e:
-            print(f"✗ marker_trackerからの位置取得エラー: {e}")
+            print(f"✗ marker_serverからの位置取得エラー: {e}")
             return None
 
     def update_current_position(self, new_position):
@@ -257,8 +258,6 @@ class ControlPC:
 
         ロボット位置、頭部方向、放射方向、壁、障害物を図示します。
         """
-        import matplotlib.pyplot as plt
-        import matplotlib.patches as patches
 
         fig, ax = plt.subplots(figsize=(10, 10))
 
@@ -699,20 +698,20 @@ class ControlPC:
             else:
                 print("  [定位計算] 物体は検出されませんでした")
 
-            # marker_trackerから現在位置を取得（リアルタイム更新）
-            print("  marker_trackerから現在位置を取得中...")
-            marker_position = self.get_robot_position_from_marker_tracker(
+            # marker_serverから現在位置を取得（リアルタイム更新）
+            print("  marker_serverから現在位置を取得中...")
+            marker_position = self.get_robot_position_from_marker_server(
                 body_marker_set='robot_body',
                 head_marker_set='robot_head'
             )
 
             if marker_position is not None:
-                # marker_trackerから取得できた場合は更新
+                # marker_serverから取得できた場合は更新
                 current_position = marker_position
                 self.update_current_position(current_position)
             else:
                 # 取得失敗の場合は内部管理の位置を使用
-                print("  警告: marker_tracker取得失敗、前回の位置を使用")
+                print("  警告: marker_server取得失敗、前回の位置を使用")
                 current_position = self.current_position
 
             print(f"  現在位置: ({current_position['x']:.3f}, {current_position['y']:.3f})")
@@ -796,20 +795,20 @@ class ControlPC:
             else:
                 print("  _data_Multi.dat ファイルなし（ファイルが見つからなかった可能性あり）")
 
-            # marker_trackerから現在位置を取得（リアルタイム更新）
-            print("  marker_trackerから現在位置を取得中...")
-            marker_position = self.get_robot_position_from_marker_tracker(
+            # marker_serverから現在位置を取得（リアルタイム更新）
+            print("  marker_serverから現在位置を取得中...")
+            marker_position = self.get_robot_position_from_marker_server(
                 body_marker_set='robot_body',
                 head_marker_set='robot_head'
             )
 
             if marker_position is not None:
-                # marker_trackerから取得できた場合は更新
+                # marker_serverから取得できた場合は更新
                 current_position = marker_position
                 self.update_current_position(current_position)
             else:
                 # 取得失敗の場合は内部管理の位置を使用
-                print("  警告: marker_tracker取得失敗、前回の位置を使用")
+                print("  警告: marker_server取得失敗、前回の位置を使用")
                 current_position = self.current_position
 
             print(f"  現在位置: ({current_position['x']:.3f}, {current_position['y']:.3f})")
@@ -931,8 +930,8 @@ if __name__ == "__main__":
 ╔══════════════════════════════════════════════════════════╗
 ║                  制御PC                                  ║
 ║                                                          ║
-║  marker_tracker.pyを起動してから実行してください         ║
-║  テストモード: python marker_tracker.py --mode test --port 6000
+║  marker_server.pyを起動してから実行してください          ║
+║  テストモード: python marker_server.py --mode test --port 6000
 ║                                                          ║
 ║  Motive側で以下を設定:                                   ║
 ║  - robot_body: ロボット本体のマーカーセット              ║
@@ -947,7 +946,7 @@ if __name__ == "__main__":
     control_pc = ControlPC(
         host='localhost',
         port=6001,
-        marker_tracker_host='localhost',
-        marker_tracker_port=6000
+        marker_server_host='localhost',
+        marker_server_port=6000
     )
     control_pc.run()
