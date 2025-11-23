@@ -955,7 +955,7 @@ if __name__ == "__main__":
     control_pc = ControlPC(
         host='localhost',
         port=6001,
-        marker_tracker_host='localhost',
-        marker_tracker_port=6000
+        marker_server_host='localhost',
+        marker_server_port=6000
     )
     control_pc.run()
