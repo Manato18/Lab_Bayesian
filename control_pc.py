@@ -675,7 +675,7 @@ class ControlPC:
 
         Returns:
             dict: 応答（実機ロボット形式）
-                {'Time': str, 'NextMove': float (m), 'NextAngle': float (rad)}
+                {'Time': str, 'NextMove': float (mm), 'NextAngle': float (deg)}
         """
         try:
             # ステップカウンターをインクリメント
@@ -732,14 +732,14 @@ class ControlPC:
             import datetime
             response = {
                 'Time': datetime.datetime.now().isoformat(),
-                'NextMove': self._mm_to_m(command['move_distance']),  # mm → m
-                'NextAngle': self._deg_to_rad(command['avoidance_direction']),  # 度 → rad
-                'PulseDirection': self._deg_to_rad(command['pulse_direction'])  # 度 → rad
+                'NextMove': command['move_distance'],  # mmで送信
+                'NextAngle': command['avoidance_direction'],  # 度で送信
+                'PulseDirection': command['pulse_direction']  # 度で送信
             }
 
-            print(f"  応答送信: NextMove={response['NextMove']:.3f}m, "
-                  f"NextAngle={response['NextAngle']:.3f}rad ({command['avoidance_direction']:.1f}度), "
-                  f"PulseDirection={response['PulseDirection']:.3f}rad ({command['pulse_direction']:.1f}度)")
+            print(f"  応答送信: NextMove={response['NextMove']:.1f}mm, "
+                  f"NextAngle={response['NextAngle']:.3f}deg, "
+                  f"PulseDirection={response['PulseDirection']:.3f}deg")
 
             return response
 
