@@ -952,8 +952,9 @@ if __name__ == "__main__":
     """)
 
     # 実機ロボット接続用に外部から到達できるアドレス/ポートで待機する
+    # 外部からの接続を受けるため、デフォルトのホストを 0.0.0.0 に設定
     control_pc = ControlPC(
-        host='localhost',
+        host='0.0.0.0',
         port=6001,
         marker_server_host='localhost',
         marker_server_port=6000
