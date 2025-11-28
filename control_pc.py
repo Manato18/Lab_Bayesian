@@ -304,15 +304,27 @@ class ControlPC:
                 zorder=3
             )
 
-        # ロボット位置を描画（head位置 = パルス放射位置）
-        robot_x = self.current_position['head_x']
-        robot_y = self.current_position['head_y']
+        # ロボット位置を描画
+        body_x = self.current_position['x']
+        body_y = self.current_position['y']
+        head_x = self.current_position['head_x']
+        head_y = self.current_position['head_y']
         fd = self.current_position['fd']
         pd = self.current_position['pd']
 
+        # ロボット本体位置（赤い点）
+        ax.scatter(
+            body_x, body_y,
+            c='red',
+            s=200,
+            marker='o',
+            label='Robot Body Position',
+            zorder=5
+        )
+
         # ロボットhead位置（青い点）
         ax.scatter(
-            robot_x, robot_y,
+            head_x, head_y,
             c='blue',
             s=200,
             marker='o',
@@ -320,13 +332,25 @@ class ControlPC:
             zorder=5
         )
 
+        # body→headへの線（灰色の破線）
+        ax.plot(
+            [body_x, head_x],
+            [body_y, head_y],
+            'gray',
+            linestyle='--',
+            linewidth=2,
+            alpha=0.5,
+            label='Body-Head Connection',
+            zorder=4
+        )
+
         # 矢印の長さ
         arrow_length = 0.3
 
-        # 放射方向（pd）を緑の矢印で描画
+        # 放射方向（pd）を緑の矢印で描画（head位置から）
         pd_rad = np.radians(pd)
         ax.arrow(
-            robot_x, robot_y,
+            head_x, head_y,
             arrow_length * np.cos(pd_rad),
             arrow_length * np.sin(pd_rad),
             head_width=0.1,
@@ -338,10 +362,10 @@ class ControlPC:
             zorder=6
         )
 
-        # 頭部方向（fd）を紫の矢印で描画
+        # 頭部方向（fd）を紫の矢印で描画（head位置から）
         fd_rad = np.radians(fd)
         ax.arrow(
-            robot_x, robot_y,
+            head_x, head_y,
             arrow_length * np.cos(fd_rad),
             arrow_length * np.sin(fd_rad),
             head_width=0.1,
@@ -366,7 +390,8 @@ class ControlPC:
 
         # 位置情報をテキストで表示
         info_text = (
-            f'Robot Head Position: ({robot_x:.3f}, {robot_y:.3f}) m\n'
+            f'Robot Body Position: ({body_x:.3f}, {body_y:.3f}) m\n'
+            f'Robot Head Position: ({head_x:.3f}, {head_y:.3f}) m\n'
             f'Head Direction (fd): {fd:.1f}°\n'
             f'Pulse Direction (pd): {pd:.1f}°\n'
             f'Obstacles: {len(self.world.pole_x)}'
