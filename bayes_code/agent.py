@@ -116,14 +116,14 @@ class Agent:
             posy (float): コウモリのy座標
             fd (float): コウモリの飛行方向（度数法）
             pd (float): コウモリのパルス発射方向（度数法）
-        
+
         Returns:
             posx (float): 更新されたコウモリのx座標
             posy (float): 更新されたコウモリのy座標
             fd (float): 更新されたコウモリの飛行方向
             pd (float): 更新されたコウモリのパルス発射方向
         """
-        
+
         # 事後分布をプロットしてmovieフォルダに保存（移動前）
         posterior_sel, X_sel, Y_sel = self._plot_posterior_distribution(
             posx = self.PositionX,
@@ -132,23 +132,39 @@ class Agent:
             fd = self.fd,
         )
 
-        # 回避のための事後分布分析：前方左右30度を5度ごとに、1.5mまで0.1mごとに分析
+        # 最初の10ステップは直線移動（回避なし）
         print(f"\n=== ステップ {self.step_idx}: 回避のための事後分布分析 ===")
-        angle_results, avoid_angle, value, flag = self._analyze_posterior_for_avoidance(X_sel, Y_sel, posterior_sel)
+        if self.step_idx < 10:
+            avoid_angle = 0.0
+            flag = True
+            print(f"ステップ{self.step_idx}: 直線移動モード（回避なし）")
+        else:
+            # 回避のための事後分布分析：前方左右30度を5度ごとに、1.5mまで0.1mごとに分析
+            angle_results, avoid_angle, value, flag = self._analyze_posterior_for_avoidance(X_sel, Y_sel, posterior_sel)
 
         # 最も安全な角度に移動する
-        new_fd = self.normalize_angle_deg(fd -avoid_angle)
-        new_pd = self.normalize_angle_deg(pd -(avoid_angle))
-        if self.step_idx >= 6:
-            new_pd = self.normalize_angle_deg(fd -(avoid_angle*1.3))
+        new_fd = self.normalize_angle_deg(fd - avoid_angle)
+
+        # パルス放射方向の計算
+        if self.step_idx < 10:
+            # 最初の10ステップは左に50度固定
+            new_pd = self.normalize_angle_deg(fd + 50.0)
+            print(f"ステップ{self.step_idx}: パルス放射方向を左50度固定 (fd={fd:.1f}° → pd={new_pd:.1f}°)")
+        else:
+            # ステップ10以降は通常の計算
+            new_pd = self.normalize_angle_deg(pd - avoid_angle)
+            if self.step_idx >= 6:
+                new_pd = self.normalize_angle_deg(fd - (avoid_angle * 1.3))
+
         print(f"{fd}度から{-avoid_angle}度があって{new_fd}度へ移動")
-        print(f"pd: {-fd -(avoid_angle*3/2)}度があって{new_pd}度")
+        print(f"pd: {new_pd}度")
 
         if flag == True:
-            # 事後確率に応じたコウモリの飛行経路を生成する
+            # 通常移動: 0.15m
             new_posx = posx + 0.15 * np.cos(np.deg2rad(new_fd))
             new_posy = posy + 0.15 * np.sin(np.deg2rad(new_fd))
         else:
+            # 緊急回避: 0.05m
             new_posx = posx + 0.05 * np.cos(np.deg2rad(new_fd))
             new_posy = posy + 0.05 * np.sin(np.deg2rad(new_fd))
         
@@ -157,15 +173,15 @@ class Agent:
     def calculate_avoidance_command(self, current_position, step):
         """
         事後分布から移動指令を計算
-        
+
         このメソッドは、ベイズ推論で更新された事後確率分布を解析して、
         ロボットの回避方向と移動距離を決定します。
         control_pc.pyとagent.pyで重複していたロジックを統合しました。
-        
+
         Args:
             current_position (dict): 現在位置 {'x': float, 'y': float, 'fd': float, 'pd': float}
             step (int): ステップ番号
-            
+
         Returns:
             tuple: (command, new_position)
                 - command (dict): 移動指令 {'avoidance_direction', 'move_distance', 'pulse_direction'}
@@ -178,24 +194,37 @@ class Agent:
             pd=current_position['pd'],
             fd=current_position['fd']
         )
-        
-        # 回避角度を計算
-        angle_results, avoid_angle, value, flag = \
-            self._analyze_posterior_for_avoidance(X_sel, Y_sel, posterior_sel)
-        
-        print(f"  [移動指令計算] 回避角度: {avoid_angle:.1f}度, フラグ: {flag}")
-        
+
+        # 最初の10ステップは直線移動（回避なし）
+        if step < 10:
+            avoid_angle = 0.0
+            flag = True
+            print(f"  [移動指令計算] ステップ{step}: 直線移動モード（回避なし）")
+        else:
+            # 回避角度を計算
+            angle_results, avoid_angle, value, flag = \
+                self._analyze_posterior_for_avoidance(X_sel, Y_sel, posterior_sel)
+            print(f"  [移動指令計算] 回避角度: {avoid_angle:.1f}度, フラグ: {flag}")
+
         # 新しい方向を計算
         new_fd = self.normalize_angle_deg(current_position['fd'] - avoid_angle)
-        new_pd = self.normalize_angle_deg(current_position['pd'] - avoid_angle)
-        if step >= 6:
-            new_pd = self.normalize_angle_deg(current_position['fd'] - (avoid_angle * 1.3))
-        
+
+        # パルス放射方向の計算
+        if step < 10:
+            # 最初の10ステップは左に50度固定
+            new_pd = self.normalize_angle_deg(current_position['fd'] + 50.0)
+            print(f"  [移動指令計算] ステップ{step}: パルス放射方向を左50度固定 (fd={current_position['fd']:.1f}° → pd={new_pd:.1f}°)")
+        else:
+            # ステップ10以降は通常の計算
+            new_pd = self.normalize_angle_deg(current_position['pd'] - avoid_angle)
+            if step >= 6:
+                new_pd = self.normalize_angle_deg(current_position['fd'] - (avoid_angle * 1.3))
+
         # 移動距離を決定
         if flag:
-            move_distance = 500.0  # mm (通常移動: 0.5m)
+            move_distance = 150.0  # mm (通常移動: 0.15m)
         else:
-            move_distance = 100.0  # mm (緊急回避: 0.1m)
+            move_distance = 50.0  # mm (緊急回避: 0.05m)
         
         # 新しい位置を計算
         move_distance_m = move_distance / 1000.0  # mm -> m
