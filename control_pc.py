@@ -686,6 +686,51 @@ class ControlPC:
             traceback.print_exc()
             return None
 
+    def plot_correlation_waveforms(self, step, crosscor_l, crosscor_r):
+        """
+        左右の相互相関波形を1枚の図に重ねてプロットし、PNGとして保存
+
+        Args:
+            step (int): ステップ番号
+            crosscor_l (list or np.array): 左耳の相互相関データ
+            crosscor_r (list or np.array): 右耳の相互相関データ
+        """
+        import numpy as np
+        import matplotlib.pyplot as plt
+        
+        # データをnumpy配列に変換
+        crosscor_l = np.array(crosscor_l)
+        crosscor_r = np.array(crosscor_r)
+        
+        # 図の作成
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        # 横軸（サンプル番号）
+        samples_l = np.arange(len(crosscor_l))
+        samples_r = np.arange(len(crosscor_r))
+        
+        # 左右の波形をプロット
+        ax.plot(samples_l, crosscor_l, 'b-', label='Left', alpha=0.7, linewidth=1.5)
+        ax.plot(samples_r, crosscor_r, 'r-', label='Right', alpha=0.7, linewidth=1.5)
+        
+        # グラフの装飾
+        ax.set_xlabel('Sample', fontsize=12)
+        ax.set_ylabel('Correlation', fontsize=12)
+        ax.set_title(f'Cross-Correlation Waveforms (Step {step})', fontsize=14)
+        ax.legend(loc='best', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        
+        # ファイル名を生成
+        filename = f"crosscor_step{step:04d}.png"
+        filepath = os.path.join(self.save_dir, filename)
+        
+        # 保存
+        plt.tight_layout()
+        plt.savefig(filepath, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        
+        print(f"  相互相関波形を保存: {filepath}")
+
     @staticmethod
     def _mm_to_m(mm_value):
         """mm → m 変換"""
@@ -725,6 +770,9 @@ class ControlPC:
 
             print(f"\nステップ{step}: 実機ロボットから要求受信")
             print(f"  相互相関データ: L={len(crosscor_l)} samples, R={len(crosscor_r)} samples")
+
+            # 相互相関波形をプロットして保存
+            self.plot_correlation_waveforms(step, crosscor_l, crosscor_r)
 
             # 物体定位を実行（新メソッド）
             print("  [定位計算] 物体定位を実行中...")
@@ -771,16 +819,29 @@ class ControlPC:
 
             # 実機ロボット形式で応答を作成
             import datetime
+
+            # パルス放射方向を頭部方向からの相対角度に変換
+            pulse_relative = command['pulse_direction'] - new_position['fd']
+            # -180～180度の範囲に正規化
+            pulse_relative = ((pulse_relative + 180) % 360) - 180
+
+            # -90～90度の範囲に制限（物理的制約）
+            pulse_relative_original = pulse_relative
+            pulse_relative = max(-90.0, min(90.0, pulse_relative))
+
+            if pulse_relative != pulse_relative_original:
+                print(f"  [警告] パルス放射方向を制限: {pulse_relative_original:.1f}° → {pulse_relative:.1f}°")
+
             response = {
                 'Time': datetime.datetime.now().isoformat(),
                 'NextMove': command['move_distance'],  # mmで送信
                 'NextAngle': command['avoidance_direction'],  # 度で送信
-                'PulseDirection': command['pulse_direction']  # 度で送信
+                'PulseDirection': pulse_relative  # 頭部方向からの相対角度（度）で送信（-90～90度）
             }
 
             print(f"  応答送信: NextMove={response['NextMove']:.1f}mm, "
                   f"NextAngle={response['NextAngle']:.3f}deg, "
-                  f"PulseDirection={response['PulseDirection']:.3f}deg")
+                  f"PulseDirection={response['PulseDirection']:.3f}deg (相対角度: fd={new_position['fd']:.1f}° → pd={command['pulse_direction']:.1f}°)")
 
             return response
 
