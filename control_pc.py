@@ -832,11 +832,14 @@ class ControlPC:
             if pulse_relative != pulse_relative_original:
                 print(f"  [警告] パルス放射方向を制限: {pulse_relative_original:.1f}° → {pulse_relative:.1f}°")
 
+            # 符号を反転（実機ロボット側の符号規則に合わせる：左が負、右が正）
+            pulse_relative = -pulse_relative
+
             response = {
                 'Time': datetime.datetime.now().isoformat(),
                 'NextMove': command['move_distance'],  # mmで送信
                 'NextAngle': command['avoidance_direction'],  # 度で送信
-                'PulseDirection': pulse_relative  # 頭部方向からの相対角度（度）で送信（-90～90度）
+                'PulseDirection': pulse_relative  # 頭部方向からの相対角度（度）で送信（左:-90～0、右:0～90）
             }
 
             print(f"  応答送信: NextMove={response['NextMove']:.1f}mm, "
