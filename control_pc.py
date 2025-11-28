@@ -121,19 +121,27 @@ class ControlPC:
             # フォールバック: configの初期値を使用
             print("警告: marker_serverから位置取得失敗、config初期値を使用")
             init_pos = config.init_pos
+            # head位置はbody位置と同じと仮定
+            init_head_pos = [init_pos[0], init_pos[1], 0.0]  # z座標は0と仮定
         else:
             init_pos = [init_pos_data['x'], init_pos_data['y'],
                         init_pos_data['fd'], init_pos_data['pd']]
+            init_head_pos = [init_pos_data['head_x'], init_pos_data['head_y'],
+                            init_pos_data['head_z']]
 
-        print(f"✓ ロボット初期位置: x={init_pos[0]:.3f}m, y={init_pos[1]:.3f}m, "
-              f"fd={init_pos[2]:.1f}度, pd={init_pos[3]:.1f}度")
+        print(f"✓ ロボット本体位置: x={init_pos[0]:.3f}m, y={init_pos[1]:.3f}m")
+        print(f"✓ パルス放射位置: x={init_head_pos[0]:.3f}m, y={init_head_pos[1]:.3f}m, z={init_head_pos[2]:.3f}m")
+        print(f"  fd（頭部方向）={init_pos[2]:.1f}度, pd（放射方向）={init_pos[3]:.1f}度")
 
         # 現在位置を内部管理
         self.current_position = {
             'x': init_pos[0],
             'y': init_pos[1],
             'fd': init_pos[2],
-            'pd': init_pos[3]
+            'pd': init_pos[3],
+            'head_x': init_head_pos[0],
+            'head_y': init_head_pos[1],
+            'head_z': init_head_pos[2]
         }
 
         # Agent初期化（事後分布の計算に必要）
@@ -218,7 +226,8 @@ class ControlPC:
             head_marker_set (str): ロボット頭部のマーカーセット名
 
         Returns:
-            dict or None: {'x': float, 'y': float, 'fd': float, 'pd': float}
+            dict or None: {'x': float, 'y': float, 'fd': float, 'pd': float,
+                          'head_x': float, 'head_y': float, 'head_z': float}
         """
         try:
             position = self.marker_tracker.get_robot_position(
@@ -229,12 +238,15 @@ class ControlPC:
             if position is None:
                 return None
 
-            # z座標は無視（2D平面での動作を想定）
+            # 全ての情報を返す（head位置を含む）
             return {
                 'x': position['x'],
                 'y': position['y'],
                 'fd': position['fd'],
-                'pd': position['pd']
+                'pd': position['pd'],
+                'head_x': position['head_x'],
+                'head_y': position['head_y'],
+                'head_z': position['head_z']
             }
 
         except Exception as e:
@@ -246,11 +258,13 @@ class ControlPC:
         内部で管理している現在位置を更新
 
         Args:
-            new_position (dict): {'x': float, 'y': float, 'fd': float, 'pd': float}
+            new_position (dict): {'x': float, 'y': float, 'fd': float, 'pd': float,
+                                 'head_x': float, 'head_y': float, 'head_z': float}
         """
         self.current_position = new_position
-        print(f"位置更新: x={new_position['x']:.3f}m, y={new_position['y']:.3f}m, "
-              f"fd={new_position['fd']:.1f}度, pd={new_position['pd']:.1f}度")
+        print(f"位置更新: body=({new_position['x']:.3f}, {new_position['y']:.3f})m, "
+              f"head=({new_position.get('head_x', 0):.3f}, {new_position.get('head_y', 0):.3f})m, "
+              f"fd（頭部方向）={new_position['fd']:.1f}度, pd（放射方向）={new_position['pd']:.1f}度")
 
     def plot_initial_state(self):
         """
@@ -290,26 +304,26 @@ class ControlPC:
                 zorder=3
             )
 
-        # ロボット位置を描画
-        robot_x = self.current_position['x']
-        robot_y = self.current_position['y']
+        # ロボット位置を描画（head位置 = パルス放射位置）
+        robot_x = self.current_position['head_x']
+        robot_y = self.current_position['head_y']
         fd = self.current_position['fd']
         pd = self.current_position['pd']
 
-        # ロボット本体（青い点）
+        # ロボットhead位置（青い点）
         ax.scatter(
             robot_x, robot_y,
             c='blue',
             s=200,
             marker='o',
-            label='Robot Position',
+            label='Robot Head Position (Pulse Source)',
             zorder=5
         )
 
         # 矢印の長さ
         arrow_length = 0.3
 
-        # 頭部方向（pd）を緑の矢印で描画
+        # 放射方向（pd）を緑の矢印で描画
         pd_rad = np.radians(pd)
         ax.arrow(
             robot_x, robot_y,
@@ -320,11 +334,11 @@ class ControlPC:
             fc='green',
             ec='green',
             linewidth=2,
-            label=f'Head Direction (pd)={pd:.1f}°',
+            label=f'Pulse Direction (pd)={pd:.1f}°',
             zorder=6
         )
 
-        # 放射方向（fd）を紫の矢印で描画
+        # 頭部方向（fd）を紫の矢印で描画
         fd_rad = np.radians(fd)
         ax.arrow(
             robot_x, robot_y,
@@ -336,7 +350,7 @@ class ControlPC:
             ec='purple',
             linewidth=2,
             linestyle='--',
-            label=f'Pulse Direction (fd)={fd:.1f}°',
+            label=f'Head Direction (fd)={fd:.1f}°',
             zorder=6
         )
 
@@ -352,9 +366,9 @@ class ControlPC:
 
         # 位置情報をテキストで表示
         info_text = (
-            f'Robot Position: ({robot_x:.3f}, {robot_y:.3f}) m\n'
-            f'Head Direction (pd): {pd:.1f}°\n'
-            f'Pulse Direction (fd): {fd:.1f}°\n'
+            f'Robot Head Position: ({robot_x:.3f}, {robot_y:.3f}) m\n'
+            f'Head Direction (fd): {fd:.1f}°\n'
+            f'Pulse Direction (pd): {pd:.1f}°\n'
             f'Obstacles: {len(self.world.pole_x)}'
         )
         ax.text(
@@ -453,9 +467,10 @@ class ControlPC:
             # calc.pyの関数が期待する2次元配列形式に変換
             distances_2d = distances.reshape(1, -1)
             angles_2d = angles.reshape(1, -1)
-            bat_x_2d = np.array([current_position['x']])
-            bat_y_2d = np.array([current_position['y']])
-            pd_2d = np.array([current_position['pd']])
+            # head位置を使用（パルス放射位置）
+            bat_x_2d = np.array([current_position['head_x']])
+            bat_y_2d = np.array([current_position['head_y']])
+            pd_2d = np.array([current_position['pd']])  # pd = pulse direction
 
             # 障害物のXY座標を計算（ベイズ定位点導入.py と同じ）
             obs_x, obs_y = r_theta_to_XY_calc(
@@ -463,19 +478,19 @@ class ControlPC:
                 bat_x_2d, bat_y_2d, pd_2d
             )
 
-            # 耳の位置を計算
+            # 耳の位置を計算（head位置を基準とし、fd（頭部方向）に対して垂直）
             earL_x, earL_y, earR_x, earR_y = ear_posit(
-                current_position['x'], current_position['y'], current_position['pd']
+                current_position['head_x'], current_position['head_y'], current_position['fd']
             )
 
-            # 各耳までの往復距離を計算
+            # 各耳までの往復距離を計算（speaker位置 = head位置）
             goback_L = real_dist_goback(
-                current_position['x'], current_position['y'],
+                current_position['head_x'], current_position['head_y'],
                 earL_x, earL_y,
                 obs_x, obs_y
             )
             goback_R = real_dist_goback(
-                current_position['x'], current_position['y'],
+                current_position['head_x'], current_position['head_y'],
                 earR_x, earR_y,
                 obs_x, obs_y
             )
@@ -494,25 +509,25 @@ class ControlPC:
             y_er = np.array([[]]).reshape(1, 0)
             print(f"  [事後分布計算] 検出なし: 空の観測データで更新")
 
-        # 空間行列を計算
+        # 空間行列を計算（head位置とpd（放射方向）を使用）
         print(f"  [事後分布計算] 空間行列を計算中...")
         current_r_2vec, current_theta_2vec_rad = r_theta_matrix(
-            np.array([current_position['x']]), np.array([current_position['y']]),
+            np.array([current_position['head_x']]), np.array([current_position['head_y']]),
             self.world.X, self.world.Y, np.array([current_position['pd']])
         )
 
-        # 耳の位置を再計算（空間行列計算用）
+        # 耳の位置を再計算（空間行列計算用、head位置を基準、fd（頭部方向）に対して垂直）
         earL_x, earL_y, earR_x, earR_y = ear_posit(
-            current_position['x'], current_position['y'], current_position['pd']
+            current_position['head_x'], current_position['head_y'], current_position['fd']
         )
 
         current_obs_goback_dist_matrix_L = real_dist_goback_matrix(
-            np.array([current_position['x']]), np.array([current_position['y']]),
+            np.array([current_position['head_x']]), np.array([current_position['head_y']]),
             np.array([earL_x]), np.array([earL_y]),
             self.world.X, self.world.Y
         )
         current_obs_goback_dist_matrix_R = real_dist_goback_matrix(
-            np.array([current_position['x']]), np.array([current_position['y']]),
+            np.array([current_position['head_x']]), np.array([current_position['head_y']]),
             np.array([earR_x]), np.array([earR_y]),
             self.world.X, self.world.Y
         )
@@ -548,12 +563,12 @@ class ControlPC:
         # 観測点の座標を計算
         if len(detections) > 0:
             # obs_x, obs_yはすでに計算済み（行286-290）
-            obs_x_mean = np.mean(obs_x) if obs_x.size > 0 else current_position['x']
-            obs_y_mean = np.mean(obs_y) if obs_y.size > 0 else current_position['y']
+            obs_x_mean = np.mean(obs_x) if obs_x.size > 0 else current_position['head_x']
+            obs_y_mean = np.mean(obs_y) if obs_y.size > 0 else current_position['head_y']
         else:
-            # 検出がない場合はロボット位置を使用
-            obs_x_mean = current_position['x']
-            obs_y_mean = current_position['y']
+            # 検出がない場合はhead位置を使用
+            obs_x_mean = current_position['head_x']
+            obs_y_mean = current_position['head_y']
         
         # 可視化に必要なデータを返す
         return {
@@ -602,7 +617,8 @@ class ControlPC:
 
         Args:
             step (int): ステップ番号
-            current_position (dict): 現在位置 {'x': float, 'y': float, 'fd': float, 'pd': float}
+            current_position (dict): 現在位置 {'x': float, 'y': float, 'fd': float, 'pd': float,
+                                               'head_x': float, 'head_y': float, 'head_z': float}
             posterior_data (dict): 事後分布計算結果
                 - data1, data2, data3, data4: ベイズ推論データ
                 - y_el_vec, y_er_vec: エコーベクトル
@@ -614,11 +630,11 @@ class ControlPC:
         print(f"  [可視化] ステップ{step}の状態を可視化中...")
 
         try:
-            # plot_single_step()を呼び出して可視化
+            # plot_single_step()を呼び出して可視化（head位置を使用）
             image_path = self.visualizer.plot_single_step(
                 step_idx=step,
-                bat_x=current_position['x'],
-                bat_y=current_position['y'],
+                bat_x=current_position['head_x'],
+                bat_y=current_position['head_y'],
                 fd=current_position['fd'],
                 pd=current_position['pd'],
                 pole_x=self.world.pole_x,

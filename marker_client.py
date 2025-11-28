@@ -149,21 +149,25 @@ class MarkerTrackerClient:
         ロボット位置と方向を取得
 
         処理フロー:
-        1. robot_bodyマーカーセットからz座標が最大のマーカーをロボット位置とする
-        2. robot_headマーカーセットから3点の真ん中の点をヘッド位置とする
-        3. pd（頭部方向）: bodyからheadへのベクトルの角度
-        4. fd（放射方向）: headマーカー3点の並び方向
+        1. robot_bodyマーカーセット（3点以上）から:
+           - z座標が最大のマーカーをロボット本体位置とする
+           - z座標が上から2番目と3番目の2点から頭部方向（fd）を計算（2点間ベクトルの垂直方向）
+        2. robot_headマーカーセット（3点）から:
+           - z座標が最大のマーカーをhead中心（パルス放射位置）とする
+           - 3点の直線に垂直な方向を放射方向（pd）として計算
 
         Args:
             body_marker_set (str): ロボット本体のマーカーセット名（既定: 'robot_body'）
             head_marker_set (str): ロボット頭部のマーカーセット名（既定: 'robot_head'）
 
         Returns:
-            dict or None: {'x': float, 'y': float, 'z': float, 'fd': float, 'pd': float}
-                - x, y: ロボット位置（robot_bodyのz最大点のxy座標）[m]
-                - z: ロボット位置のz座標 [m]
-                - fd: 放射方向（headの3点の直線方向）[度、0-360]
-                - pd: 頭部方向（bodyからheadへの方向）[度、0-360]
+            dict or None: {'x': float, 'y': float, 'z': float,
+                          'head_x': float, 'head_y': float, 'head_z': float,
+                          'fd': float, 'pd': float}
+                - x, y, z: ロボット本体位置（robot_bodyのz最大点）[m]
+                - head_x, head_y, head_z: パルス放射位置（robot_headのz最大点）[m]
+                - fd: 頭部方向（bodyの上から2番目と3番目の2点間ベクトルに垂直な方向）[度、0-360]
+                - pd: 放射方向（headの3点の直線に垂直な方向）[度、0-360]
         """
         # 1. robot_bodyマーカーセットを取得
         body_result = self.get_marker_set(body_marker_set)
@@ -178,17 +182,20 @@ class MarkerTrackerClient:
 
         body_markers = body_result.get('markers', [])
 
-        if len(body_markers) == 0:
-            print(f"✗ マーカーセット '{body_marker_set}' にマーカーがありません")
+        if len(body_markers) < 3:
+            print(f"✗ マーカーセット '{body_marker_set}' は3個以上のマーカーが必要ですが、{len(body_markers)}個です")
             return None
 
-        # z座標が最大のマーカーを見つける
+        # z座標が最大のマーカーを見つける（ロボット本体位置）
         body_markers_array = np.array(body_markers)
         max_z_idx = np.argmax(body_markers_array[:, 2])
         body_pos = body_markers_array[max_z_idx]
 
         print(f"  robot_body: {len(body_markers)}個のマーカーからz最大点を選択")
-        print(f"    選択された点（インデックス{max_z_idx}）: ({body_pos[0]:.3f}, {body_pos[1]:.3f}, {body_pos[2]:.3f})")
+        print(f"    ロボット本体位置（インデックス{max_z_idx}）: ({body_pos[0]:.3f}, {body_pos[1]:.3f}, {body_pos[2]:.3f})")
+
+        # fd（頭部方向）を計算: 上から2番目と3番目の2点の垂直方向
+        fd = self._calculate_fd_from_body(body_markers_array, max_z_idx)
 
         # 2. robot_headマーカーセットを取得
         head_result = self.get_marker_set(head_marker_set)
@@ -207,85 +214,120 @@ class MarkerTrackerClient:
             print(f"✗ マーカーセット '{head_marker_set}' は3個のマーカーが必要ですが、{len(head_markers)}個です")
             return None
 
-        # 3点の真ん中を見つける
+        # z座標が最大のマーカーを見つける（パルス放射位置）
         head_markers_array = np.array(head_markers)
-        middle_idx = self._find_middle_point(head_markers_array)
-        head_pos = head_markers_array[middle_idx]
+        head_max_z_idx = np.argmax(head_markers_array[:, 2])
+        head_pos = head_markers_array[head_max_z_idx]
 
-        print(f"  robot_head: 3個のマーカーから真ん中の点を選択")
-        print(f"    選択された点（インデックス{middle_idx}）: ({head_pos[0]:.3f}, {head_pos[1]:.3f}, {head_pos[2]:.3f})")
+        print(f"  robot_head: 3個のマーカーからz最大点を選択")
+        print(f"    パルス放射位置（インデックス{head_max_z_idx}）: ({head_pos[0]:.3f}, {head_pos[1]:.3f}, {head_pos[2]:.3f})")
 
-        # 3. pd（頭部方向）を計算: bodyからheadへの角度
-        dx = head_pos[0] - body_pos[0]
-        dy = head_pos[1] - body_pos[1]
-        pd = np.degrees(np.arctan2(dy, dx))
-        # 0-360度の範囲に正規化
-        if pd < 0:
-            pd += 360
-
-        # 4. fd（放射方向）は一旦 pd（頭部方向）と同じとする
-        #    以前は head3点の主軸方向から計算していたが、運用上わかりやすくするため
-        #    現時点では頭部方向と放射方向を一致させる。
-        fd = pd
+        # pd（放射方向）を計算: 3点の直線に垂直な方向
+        pd = self._calculate_pd_from_head(head_markers_array, body_pos)
 
         position = {
             'x': float(body_pos[0]),
             'y': float(body_pos[1]),
             'z': float(body_pos[2]),
+            'head_x': float(head_pos[0]),
+            'head_y': float(head_pos[1]),
+            'head_z': float(head_pos[2]),
             'fd': float(fd),
             'pd': float(pd)
         }
 
-        print(f"✓ ロボット位置取得: ({position['x']:.3f}, {position['y']:.3f}, {position['z']:.3f})")
-        print(f"  fd（放射方向）={position['fd']:.1f}度, pd（頭部方向）={position['pd']:.1f}度")
+        print(f"✓ ロボット本体位置: ({position['x']:.3f}, {position['y']:.3f}, {position['z']:.3f})")
+        print(f"✓ パルス放射位置: ({position['head_x']:.3f}, {position['head_y']:.3f}, {position['head_z']:.3f})")
+        print(f"  fd（頭部方向）={position['fd']:.1f}度, pd（放射方向）={position['pd']:.1f}度")
 
         return position
 
-    def _find_middle_point(self, points: np.ndarray) -> int:
-        """
-        3点の中で真ん中の点のインデックスを返す
 
-        3点が直線上に並んでいると仮定し、主成分分析（PCA）で主軸方向を求め、
-        その方向に射影した値でソートして中央の点を選択します。
+    def _calculate_fd_from_body(self, body_markers: np.ndarray, max_z_idx: int) -> float:
+        """
+        robot_bodyの3点から頭部方向（fd: head direction）を計算
+
+        z座標が上から2番目と3番目の2点を見つけ、そのベクトルに垂直な方向を計算します。
+        垂直方向はz最大点の方を向くように調整されます。
 
         Args:
-            points (np.ndarray): (3, 3) の3次元座標配列
+            body_markers (np.ndarray): (N, 3) の3次元座標配列（N >= 3）
+            max_z_idx (int): z座標が最大の点のインデックス
 
         Returns:
-            int: 真ん中の点のインデックス（0, 1, 2のいずれか）
+            float: 頭部方向の角度 [度、0-360]
         """
-        # 重心を計算
-        centroid = np.mean(points, axis=0)
-        # 重心を原点とする座標系に変換
-        centered = points - centroid
+        # z最大点以外の点を取得
+        other_indices = [i for i in range(len(body_markers)) if i != max_z_idx]
 
-        # 共分散行列を計算（3D）
-        cov = np.cov(centered.T)
+        if len(other_indices) < 2:
+            print(f"  警告: fd計算に必要な点が不足しています。デフォルト値0度を返します。")
+            return 0.0
 
-        # 固有値と固有ベクトルを計算
-        eigenvalues, eigenvectors = np.linalg.eig(cov)
+        # z座標でソートして、z座標が大きい方から2点を選ぶ（上から2番目と3番目）
+        other_markers = body_markers[other_indices]
+        sorted_indices = np.argsort(other_markers[:, 2])[::-1]  # 降順ソート
 
-        # 最大固有値に対応する固有ベクトル（主軸方向）
-        principal_axis = eigenvectors[:, np.argmax(eigenvalues)]
+        # 上から2番目と3番目の2点（B, C）
+        B = other_markers[sorted_indices[0]]  # z最大点を除いた中で最大
+        C = other_markers[sorted_indices[1]]  # z最大点を除いた中で2番目
 
-        # 各点を主軸に射影
-        projections = centered @ principal_axis
+        print(f"    上から2番目と3番目の2点: B=({B[0]:.3f}, {B[1]:.3f}, {B[2]:.3f}), C=({C[0]:.3f}, {C[1]:.3f}, {C[2]:.3f})")
 
-        # 射影値でソートして中央のインデックスを返す
-        sorted_indices = np.argsort(projections)
-        middle_idx = sorted_indices[1]  # 中央の点
+        # B→Cのベクトル（xy平面のみ）
+        BC_x = C[0] - B[0]
+        BC_y = C[1] - B[1]
 
-        return middle_idx
+        # BCに垂直なベクトル（90度回転）: (x, y) → (-y, x) または (y, -x)
+        # 2つの候補がある
+        perp1_x = -BC_y
+        perp1_y = BC_x
+        perp2_x = BC_y
+        perp2_y = -BC_x
 
-    def _calculate_head_direction(self, head_markers: np.ndarray) -> float:
+        # z最大点（A）の位置
+        A = body_markers[max_z_idx]
+
+        # B-Cの中点M
+        M_x = (B[0] + C[0]) / 2
+        M_y = (B[1] + C[1]) / 2
+
+        # M→Aのベクトル
+        MA_x = A[0] - M_x
+        MA_y = A[1] - M_y
+
+        # perp1とperp2のどちらがM→Aに近いか判定（内積で判定）
+        dot1 = perp1_x * MA_x + perp1_y * MA_y
+        dot2 = perp2_x * MA_x + perp2_y * MA_y
+
+        if dot1 > dot2:
+            perp_x, perp_y = perp1_x, perp1_y
+        else:
+            perp_x, perp_y = perp2_x, perp2_y
+
+        # 角度を計算
+        fd = np.degrees(np.arctan2(perp_y, perp_x))
+
+        # 0-360度の範囲に正規化
+        if fd < 0:
+            fd += 360
+
+        print(f"    2点間ベクトルBC: ({BC_x:.3f}, {BC_y:.3f})")
+        print(f"    垂直方向（fd）: {fd:.1f}度")
+
+        return float(fd)
+
+    def _calculate_pd_from_head(self, head_markers: np.ndarray, body_pos: np.ndarray) -> float:
         """
-        robot_headの3点から放射方向（fd）を計算
+        robot_headの3点から放射方向（pd: pulse direction）を計算
 
         3点が直線上に並んでいると仮定し、主成分分析（PCA）で主軸方向を求め、
-        その方向を角度で返します。
+        その垂直方向を放射方向とします。垂直方向は前方（body_posから遠ざかる方向）に
+        調整されます。
 
         Args:
             head_markers (np.ndarray): (3, 3) の3次元座標配列
+            body_pos (np.ndarray): ロボット本体位置 [x, y, z]
 
         Returns:
             float: 放射方向の角度 [度、0-360]
@@ -307,18 +349,39 @@ class MarkerTrackerClient:
         # 最大固有値に対応する固有ベクトル（主軸方向）
         principal_axis_2d = eigenvectors[:, np.argmax(eigenvalues)]
 
+        print(f"    head直線の主軸方向: ({principal_axis_2d[0]:.3f}, {principal_axis_2d[1]:.3f})")
+
+        # 主軸に垂直な方向（90度回転）: 2つの候補
+        perp1_x = -principal_axis_2d[1]
+        perp1_y = principal_axis_2d[0]
+        perp2_x = principal_axis_2d[1]
+        perp2_y = -principal_axis_2d[0]
+
+        # body_posから重心への方向
+        body_to_head_x = centroid[0] - body_pos[0]
+        body_to_head_y = centroid[1] - body_pos[1]
+
+        # perp1とperp2のどちらがbody→headと同じ向きか判定（内積）
+        dot1 = perp1_x * body_to_head_x + perp1_y * body_to_head_y
+        dot2 = perp2_x * body_to_head_x + perp2_y * body_to_head_y
+
+        # body_posから遠ざかる方向を選択
+        if dot1 > dot2:
+            perp_x, perp_y = perp1_x, perp1_y
+        else:
+            perp_x, perp_y = perp2_x, perp2_y
+
         # 方向を角度に変換
-        fd = np.degrees(np.arctan2(principal_axis_2d[1], principal_axis_2d[0]))
+        pd = np.degrees(np.arctan2(perp_y, perp_x))
 
         # 0-360度の範囲に正規化
-        if fd < 0:
-            fd += 360
+        if pd < 0:
+            pd += 360
 
-        # PCAの主軸は180度の曖昧性があるため、
-        # bodyからheadへの方向と整合性を取る必要がある場合は追加処理が必要
-        # ここでは主軸の方向をそのまま返す
+        print(f"    直線の垂直方向（pd）: {pd:.1f}度")
 
-        return float(fd)
+        return float(pd)
+
 
     def get_obstacles(self, marker_set_name='obstacles') -> Tuple[np.ndarray, np.ndarray]:
         """
