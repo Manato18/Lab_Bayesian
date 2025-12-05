@@ -131,7 +131,7 @@ class ControlPC:
 
         print(f"✓ ロボット本体位置: x={init_pos[0]:.3f}m, y={init_pos[1]:.3f}m")
         print(f"✓ パルス放射位置: x={init_head_pos[0]:.3f}m, y={init_head_pos[1]:.3f}m, z={init_head_pos[2]:.3f}m")
-        print(f"  fd（頭部方向）={init_pos[2]:.1f}度, pd（放射方向）={init_pos[3]:.1f}度")
+        print(f"  fd（飛行方向）={init_pos[2]:.1f}度, pd（放射方向）={init_pos[3]:.1f}度")
 
         # 現在位置を内部管理
         self.current_position = {
@@ -264,7 +264,7 @@ class ControlPC:
         self.current_position = new_position
         print(f"位置更新: body=({new_position['x']:.3f}, {new_position['y']:.3f})m, "
               f"head=({new_position.get('head_x', 0):.3f}, {new_position.get('head_y', 0):.3f})m, "
-              f"fd（頭部方向）={new_position['fd']:.1f}度, pd（放射方向）={new_position['pd']:.1f}度")
+              f"fd（飛行方向）={new_position['fd']:.1f}度, pd（放射方向）={new_position['pd']:.1f}度")
 
     def plot_initial_state(self):
         """
@@ -362,7 +362,7 @@ class ControlPC:
             zorder=6
         )
 
-        # 頭部方向（fd）を紫の矢印で描画（head位置から）
+        # 飛行方向（fd）を紫の矢印で描画（head位置から）
         fd_rad = np.radians(fd)
         ax.arrow(
             head_x, head_y,
@@ -374,7 +374,7 @@ class ControlPC:
             ec='purple',
             linewidth=2,
             linestyle='--',
-            label=f'Head Direction (fd)={fd:.1f}°',
+            label=f'Flight Direction (fd)={fd:.1f}°',
             zorder=6
         )
 
@@ -392,7 +392,7 @@ class ControlPC:
         info_text = (
             f'Robot Body Position: ({body_x:.3f}, {body_y:.3f}) m\n'
             f'Robot Head Position: ({head_x:.3f}, {head_y:.3f}) m\n'
-            f'Head Direction (fd): {fd:.1f}°\n'
+            f'Flight Direction (fd): {fd:.1f}°\n'
             f'Pulse Direction (pd): {pd:.1f}°\n'
             f'Obstacles: {len(self.world.pole_x)}'
         )
@@ -503,7 +503,7 @@ class ControlPC:
                 bat_x_2d, bat_y_2d, pd_2d
             )
 
-            # 耳の位置を計算（head位置を基準とし、fd（頭部方向）に対して垂直）
+            # 耳の位置を計算（head位置を基準とし、fd（飛行方向）に対して垂直）
             earL_x, earL_y, earR_x, earR_y = ear_posit(
                 current_position['head_x'], current_position['head_y'], current_position['fd']
             )
@@ -541,7 +541,7 @@ class ControlPC:
             self.world.X, self.world.Y, np.array([current_position['pd']])
         )
 
-        # 耳の位置を再計算（空間行列計算用、head位置を基準、fd（頭部方向）に対して垂直）
+        # 耳の位置を再計算（空間行列計算用、head位置を基準、fd（飛行方向）に対して垂直）
         earL_x, earL_y, earR_x, earR_y = ear_posit(
             current_position['head_x'], current_position['head_y'], current_position['fd']
         )

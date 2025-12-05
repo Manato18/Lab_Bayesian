@@ -63,10 +63,10 @@ eps_y = 1e-20         # エコー信号の背景レベル（微小値）
 # 空間パラメータ (Spatial Parameters)
 # ========================================
 
-x_max = 4.5           # シミュレーション空間の最大x座標 [m]
+x_max = 3.5           # シミュレーション空間の最大x座標 [m]
                       # 使用: main.py, world.py
 
-y_max = 4.5           # シミュレーション空間の最大y座標 [m]
+y_max = 3.5           # シミュレーション空間の最大y座標 [m]
                       # 使用: bayesian.py, main.py, world.py
 
 margin_space = 0.5      # 境界マージン空間 [m]
