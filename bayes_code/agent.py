@@ -185,8 +185,8 @@ class Agent:
             for candidate_angle in candidate_angles:
                 # 移動後の位置を計算
                 new_fd_temp = self.normalize_angle_deg(fd - candidate_angle)
-                new_posx_temp = posx + 0.15 * np.cos(np.deg2rad(new_fd_temp))
-                new_posy_temp = posy + 0.15 * np.sin(np.deg2rad(new_fd_temp))
+                new_posx_temp = posx + 0.07 * np.cos(np.deg2rad(new_fd_temp))
+                new_posy_temp = posy + 0.07 * np.sin(np.deg2rad(new_fd_temp))
 
                 # 衝突チェック
                 is_safe, max_posterior = self._check_collision_at_position(
@@ -268,13 +268,13 @@ class Agent:
         print(f"pd: {new_pd}度")
 
         if flag == True:
-            # 通常移動: 0.15m
-            new_posx = posx + 0.15 * np.cos(np.deg2rad(new_fd))
-            new_posy = posy + 0.15 * np.sin(np.deg2rad(new_fd))
+            # 通常移動: 0.07m
+            new_posx = posx + 0.07 * np.cos(np.deg2rad(new_fd))
+            new_posy = posy + 0.07 * np.sin(np.deg2rad(new_fd))
         else:
-            # 緊急回避: 0.05m
-            new_posx = posx + 0.05 * np.cos(np.deg2rad(new_fd))
-            new_posy = posy + 0.05 * np.sin(np.deg2rad(new_fd))
+            # 緊急回避: 0.03m
+            new_posx = posx + 0.03 * np.cos(np.deg2rad(new_fd))
+            new_posy = posy + 0.03 * np.sin(np.deg2rad(new_fd))
         
         return new_posx, new_posy, new_fd, new_pd, flag
 
@@ -322,8 +322,8 @@ class Agent:
             for candidate_angle in candidate_angles:
                 # 移動後の位置を計算
                 new_fd_temp = self.normalize_angle_deg(current_position['fd'] - candidate_angle)
-                new_posx_temp = current_position['x'] + 0.15 * np.cos(np.deg2rad(new_fd_temp))
-                new_posy_temp = current_position['y'] + 0.15 * np.sin(np.deg2rad(new_fd_temp))
+                new_posx_temp = current_position['x'] + 0.07 * np.cos(np.deg2rad(new_fd_temp))
+                new_posy_temp = current_position['y'] + 0.07 * np.sin(np.deg2rad(new_fd_temp))
 
                 # 衝突チェック
                 is_safe, max_posterior = self._check_collision_at_position(
@@ -401,9 +401,9 @@ class Agent:
 
         # 移動距離を決定
         if flag:
-            move_distance = 150.0  # mm (通常移動: 0.15m)
+            move_distance = 70.0  # mm (通常移動: 0.07m)
         else:
-            move_distance = 50.0  # mm (緊急回避: 0.05m)
+            move_distance = 30.0  # mm (緊急回避: 0.03m)
         
         # 新しい位置を計算
         move_distance_m = move_distance / 1000.0  # mm -> m
