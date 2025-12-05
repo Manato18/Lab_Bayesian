@@ -659,6 +659,7 @@ class Agent:
         plt.xlim(-3, 3)
         plt.ylim(-1, 3)
         plt.grid(True, alpha=0.3)
+        plt.gca().set_aspect('equal', adjustable='box')  # アスペクト比を1:1にして角度を正確に表示
 
         # ファイル名の生成（ステップ番号を含む）
         filename = f"{movie_dir}/posterior_step_{self.step_idx:04d}.png"
