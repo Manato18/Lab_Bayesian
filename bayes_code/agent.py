@@ -229,10 +229,10 @@ class Agent:
                             if value <= -21:  # -21以下のみを収集
                                 all_values.append(value)
 
-                # ステップ2: 上位10%の閾値を計算
+                # ステップ2: 上位5%の閾値を計算
                 if len(all_values) >= 5:  # 十分なデータがある場合
-                    danger_threshold = np.percentile(all_values, 90)
-                    print(f"危険判定閾値（壁の外を除いた上位10%）: {danger_threshold:.2f}")
+                    danger_threshold = np.percentile(all_values, 95)
+                    print(f"危険判定閾値（壁の外を除いた上位5%）: {danger_threshold:.2f}")
                     print(f"閾値計算に使用したデータ点数: {len(all_values)}")
                 else:
                     # データが少なすぎる場合はフォールバック
@@ -404,10 +404,10 @@ class Agent:
                             if value <= -21:  # -21以下のみを収集
                                 all_values.append(value)
 
-                # ステップ2: 上位10%の閾値を計算
+                # ステップ2: 上位5%の閾値を計算
                 if len(all_values) >= 5:  # 十分なデータがある場合
-                    danger_threshold = np.percentile(all_values, 90)
-                    print(f"  危険判定閾値（壁の外を除いた上位10%）: {danger_threshold:.2f}")
+                    danger_threshold = np.percentile(all_values, 95)
+                    print(f"  危険判定閾値（壁の外を除いた上位5%）: {danger_threshold:.2f}")
                     print(f"  閾値計算に使用したデータ点数: {len(all_values)}")
                 else:
                     # データが少なすぎる場合はフォールバック
@@ -613,10 +613,10 @@ class Agent:
                     if value <= -21:  # -21以下のみを収集
                         all_values.append(value)
 
-        # ステップ2: 上位10%の閾値を計算
+        # ステップ2: 上位5%の閾値を計算
         if len(all_values) >= 5:  # 十分なデータがある場合
-            danger_threshold = np.percentile(all_values, 90)
-            print(f"危険判定閾値（壁の外を除いた上位10%）: {danger_threshold:.2f}")
+            danger_threshold = np.percentile(all_values, 95)
+            print(f"危険判定閾値（壁の外を除いた上位5%）: {danger_threshold:.2f}")
             print(f"閾値計算に使用したデータ点数: {len(all_values)}")
         else:
             # データが少なすぎる場合はフォールバック
@@ -771,7 +771,7 @@ class Agent:
         if self.world is not None and self.world.pole_x is not None and len(self.world.pole_x) > 0:
             plt.scatter(self.world.pole_x, self.world.pole_y,
                        c='red', marker='x', s=100, linewidths=3,
-                       label='障害物', zorder=5)
+                       label='Obstacles', zorder=5)
 
         # 危険領域をグレーの散布図でプロット
         if self.last_danger_threshold is not None:
@@ -783,8 +783,8 @@ class Agent:
             if len(X_danger) > 0:
                 plt.scatter(X_danger, Y_danger,
                            c='gray', marker='.', s=10, alpha=0.5,
-                           label=f'危険領域（閾値≥{self.last_danger_threshold:.1f}）', zorder=4)
-                print(f"  [可視化] 危険領域: {len(X_danger)}点をプロット（閾値: {self.last_danger_threshold:.2f}）")
+                           label=f'Danger Zone (threshold≥{self.last_danger_threshold:.1f})', zorder=4)
+                print(f"  [Visualization] Danger zone: {len(X_danger)} points plotted (threshold: {self.last_danger_threshold:.2f})")
 
         # 矢印と線の長さ
         arrow_len = 0.4  # 頭部方向（矢印）の長さ
@@ -794,7 +794,7 @@ class Agent:
         if self.prev_x is not None:
             color_prev = 'lightblue'
             plt.plot(self.prev_x, self.prev_y, 'o', color=color_prev,
-                    markersize=12, label='前回位置', zorder=4)
+                    markersize=12, label='Previous Position', zorder=4)
 
             # 前回の頭部方向（fd）：矢印
             dx_fd = arrow_len * np.cos(np.deg2rad(self.prev_fd))
@@ -802,7 +802,7 @@ class Agent:
             plt.arrow(self.prev_x, self.prev_y, dx_fd, dy_fd,
                      head_width=0.15, head_length=0.1,
                      fc=color_prev, ec=color_prev, linewidth=2.5,
-                     label='前回頭部方向', zorder=4)
+                     label='Previous Head Direction', zorder=4)
 
             # 前回の放射方向（pd）：線のみ
             dx_pd = line_len * np.cos(np.deg2rad(self.prev_pd))
@@ -810,12 +810,12 @@ class Agent:
             plt.plot([self.prev_x, self.prev_x + dx_pd],
                     [self.prev_y, self.prev_y + dy_pd],
                     color=color_prev, linewidth=2.5, linestyle='-',
-                    label='前回放射方向', zorder=4)
+                    label='Previous Radiation Direction', zorder=4)
 
         # 現在位置 - 赤色
         color_current = 'red'
         plt.plot(current_pos['x'], current_pos['y'], 'o', color=color_current,
-                markersize=14, label='現在位置', zorder=4)
+                markersize=14, label='Current Position', zorder=4)
 
         # 現在の頭部方向（fd）：矢印
         dx_fd = arrow_len * np.cos(np.deg2rad(current_pos['fd']))
@@ -823,7 +823,7 @@ class Agent:
         plt.arrow(current_pos['x'], current_pos['y'], dx_fd, dy_fd,
                  head_width=0.15, head_length=0.1,
                  fc=color_current, ec=color_current, linewidth=2.5,
-                 label='現在頭部方向', zorder=4)
+                 label='Current Head Direction', zorder=4)
 
         # 現在の放射方向（pd）：線のみ
         dx_pd = line_len * np.cos(np.deg2rad(current_pos['pd']))
@@ -831,12 +831,12 @@ class Agent:
         plt.plot([current_pos['x'], current_pos['x'] + dx_pd],
                 [current_pos['y'], current_pos['y'] + dy_pd],
                 color=color_current, linewidth=2.5, linestyle='-',
-                label='現在放射方向', zorder=4)
+                label='Current Radiation Direction', zorder=4)
 
         # 次の位置（回避角度分回転+移動距離分直進）- 薄めの緑色
         color_next = 'lightgreen'
         plt.plot(next_pos['x'], next_pos['y'], 'o', color=color_next,
-                markersize=12, label='次の位置（回避後）', zorder=4)
+                markersize=12, label='Next Position (After Avoidance)', zorder=4)
 
         # 次の頭部方向（fd）：矢印
         dx_fd = arrow_len * np.cos(np.deg2rad(next_pos['fd']))
@@ -844,7 +844,7 @@ class Agent:
         plt.arrow(next_pos['x'], next_pos['y'], dx_fd, dy_fd,
                  head_width=0.15, head_length=0.1,
                  fc=color_next, ec=color_next, linewidth=2.5,
-                 label='次回頭部方向', zorder=4)
+                 label='Next Head Direction', zorder=4)
 
         # 次の放射方向（pd）：線のみ
         dx_pd = line_len * np.cos(np.deg2rad(next_pos['pd']))
@@ -852,19 +852,19 @@ class Agent:
         plt.plot([next_pos['x'], next_pos['x'] + dx_pd],
                 [next_pos['y'], next_pos['y'] + dy_pd],
                 color=color_next, linewidth=2.5, linestyle='-',
-                label='次回放射方向', zorder=4)
+                label='Next Radiation Direction', zorder=4)
 
         # 移動経路を線で結ぶ
         if self.prev_x is not None:
             # 前回→現在→次
             plt.plot([self.prev_x, current_pos['x'], next_pos['x']],
                     [self.prev_y, current_pos['y'], next_pos['y']],
-                    'k--', alpha=0.6, linewidth=2.5, label='移動経路', zorder=3)
+                    'k--', alpha=0.6, linewidth=2.5, label='Movement Path', zorder=3)
         else:
             # 現在→次
             plt.plot([current_pos['x'], next_pos['x']],
                     [current_pos['y'], next_pos['y']],
-                    'k--', alpha=0.6, linewidth=2.5, label='移動経路', zorder=3)
+                    'k--', alpha=0.6, linewidth=2.5, label='Movement Path', zorder=3)
 
         # グラフの設定
         plt.legend(loc='upper right', fontsize=11, framealpha=0.9)
@@ -872,11 +872,11 @@ class Agent:
         plt.gca().set_aspect('equal', adjustable='box')
         plt.xlabel('X [m]', fontsize=12)
         plt.ylabel('Y [m]', fontsize=12)
-        plt.title(f'Step {self.step_idx}: 事後分布と移動計画（全体表示）', fontsize=14, fontweight='bold')
+        plt.title(f'Step {self.step_idx}: Posterior Distribution and Movement Plan (Global View)', fontsize=14, fontweight='bold')
 
         # 保存
         filename = f"{movie_dir}/posterior_step_{self.step_idx:04d}.png"
         plt.tight_layout()
         plt.savefig(filename, dpi=150, bbox_inches='tight')
         plt.close()
-        print(f"事後分布プロット（全体版）を保存: {filename}")
+        print(f"Posterior distribution plot (global view) saved: {filename}")
