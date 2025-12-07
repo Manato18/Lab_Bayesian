@@ -220,11 +220,15 @@ class Agent:
             fd=current_position['fd']
         )
 
-        # 衝突判定閾値を計算（環境全体の事後分布から上位5%を使用）
+        # 衝突判定閾値を計算（環境全体の事後分布から上位5%を使用、最大-50）
         all_values = self.bayesian.Px_yn_conf_log_current[self.bayesian.Px_yn_conf_log_current <= -21].flatten()
         if len(all_values) >= 5:
-            danger_threshold = np.percentile(all_values, 95)
-            print(f"  [閾値計算] 危険判定閾値（環境全体の上位5%）: {danger_threshold:.2f} (データ点数: {len(all_values)})")
+            percentile_95 = np.percentile(all_values, 95)
+            danger_threshold = min(percentile_95, -50)  # 最大でも-50に制限
+            if percentile_95 > -50:
+                print(f"  [閾値計算] 上位5%: {percentile_95:.2f} → 上限-50を適用 (データ点数: {len(all_values)})")
+            else:
+                print(f"  [閾値計算] 危険判定閾値（環境全体の上位5%）: {danger_threshold:.2f} (データ点数: {len(all_values)})")
         else:
             danger_threshold = -50
             print(f"  [閾値計算] 警告: データが{len(all_values)}点のみ、固定閾値{danger_threshold}を使用")
