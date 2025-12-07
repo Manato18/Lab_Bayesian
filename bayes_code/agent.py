@@ -244,8 +244,8 @@ class Agent:
             flag = True
             print(f"  [移動指令計算] ステップ{step}: 直線移動モード（回避なし）")
         else:
-            # fd基準で分析するため、fd-pdのオフセットを計算
-            fd_offset = current_position['fd'] - current_position['pd']
+            # fd基準で分析するため、pd-fdのオフセットを計算（回転座標系での角度）
+            fd_offset = current_position['pd'] - current_position['fd']
             # 回避角度を計算（fd基準）
             angle_results, avoid_angle, value, flag, candidate_angles = \
                 self._analyze_posterior_for_avoidance(X_sel, Y_sel, posterior_sel, danger_threshold, fd_offset)
@@ -261,8 +261,9 @@ class Agent:
                 # 回転座標系では：原点(0,0)=ロボット位置, Y軸=pd方向
                 # candidate_angleはfd基準、pd基準に変換する
                 # fd - candidate_angle = 新しいfd方向
-                # (fd - candidate_angle) - pd = pd基準での新しい方向
-                relative_angle = (current_position['fd'] - candidate_angle) - current_position['pd']
+                # pd - (新しいfd方向) = pd基準での新しい方向
+                # = pd - fd + candidate_angle = fd_offset + candidate_angle
+                relative_angle = fd_offset + candidate_angle
 
                 # 回転座標系での移動後の位置（移動距離0.07m）
                 new_x_rot = 0.07 * np.sin(np.deg2rad(relative_angle))
@@ -590,6 +591,28 @@ class Agent:
             plt.scatter(self.world.pole_x, self.world.pole_y,
                        c='red', marker='x', s=100, linewidths=3,
                        label='Obstacles', zorder=5)
+
+        # 特定の角度（0度、-10度、30度）での衝突チェック範囲を円で描画
+        test_angles = [0, -10, 30]  # fd基準の角度
+        from matplotlib.patches import Circle
+        for i, test_angle in enumerate(test_angles):
+            # fd基準の角度から移動先を計算（ワールド座標系）
+            new_fd_test = self.normalize_angle_deg(current_pos['fd'] - test_angle)
+            test_x = current_pos['x'] + move_distance_m * np.cos(np.deg2rad(new_fd_test))
+            test_y = current_pos['y'] + move_distance_m * np.sin(np.deg2rad(new_fd_test))
+
+            # 衝突チェック範囲を青色の円で描画
+            circle = Circle((test_x, test_y), self.agent_radius,
+                           fill=False, edgecolor='blue', linewidth=2,
+                           linestyle='-', alpha=0.8, zorder=6)
+            plt.gca().add_patch(circle)
+
+            # ラベルを追加（最初の円のみ）
+            if i == 0:
+                plt.plot([], [], color='blue', linestyle='-', linewidth=2,
+                        label=f'Collision Check Area (r={self.agent_radius}m)')
+
+        print(f"  [Visualization] {len(test_angles)} collision check circles plotted at angles: {test_angles}")
 
         # 全候補角度のロボット位置を円で描画（デバッグ用）
         if len(candidate_angles) > 0:
