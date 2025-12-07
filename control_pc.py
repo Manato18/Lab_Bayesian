@@ -907,8 +907,8 @@ class ControlPC:
             if pulse_relative != pulse_relative_original:
                 print(f"  [警告] パルス放射方向を制限: {pulse_relative_original:.1f}° → {pulse_relative:.1f}°")
 
-            # 符号を反転（実機ロボット側の符号規則に合わせる：左が負、右が正）
-            pulse_relative = -pulse_relative
+            # 符号反転は不要（pd - fdの計算結果が既に正しい符号規則）
+            # 正の値 = 右回転、負の値 = 左回転
 
             response = {
                 'Time': datetime.datetime.now().isoformat(),

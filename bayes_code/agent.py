@@ -315,11 +315,11 @@ class Agent:
         # パルス放射方向の計算
         if step < 8:
             # 最初の8ステップは進行方向より30度左
-            new_pd = self.normalize_angle_deg(current_position['fd'] + 30.0)
+            new_pd = self.normalize_angle_deg(current_position['fd'] - 30.0)
             print(f"  [移動指令計算] ステップ{step}: パルス放射方向を左30度固定 (fd={current_position['fd']:.1f}° → pd={new_pd:.1f}°)")
         else:
             # ステップ8以降は回避角度の1.5倍で調整
-            new_pd = self.normalize_angle_deg(current_position['fd'] - (avoid_angle * 1.5))
+            new_pd = self.normalize_angle_deg(current_position['fd'] + (avoid_angle * 1.5))
 
         # 緊急回避時は飛行方向と放射方向を一致させる
         if not flag:
