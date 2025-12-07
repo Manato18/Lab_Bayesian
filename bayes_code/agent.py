@@ -437,8 +437,22 @@ class Agent:
 
                     self.last_avoidance_direction = avoid_angle
                 else:
-                    avoid_angle = candidate_angles[0] if len(candidate_angles) > 0 else 0.0
-                    print(f"  緊急回避角度の決定に失敗。最も安全な角度{avoid_angle}度を使用します。")
+                    # 危険な角度が見つからなかった場合も±60度で回避
+                    if self.last_avoidance_direction is not None and self.consecutive_avoidance_count > 0:
+                        avoid_angle = self.last_avoidance_direction
+                        print(f"  連続回避: 前回と同じ方向({avoid_angle}度)に回避")
+                        self.consecutive_avoidance_count += 1
+                    else:
+                        # 最も安全な候補角度の方向を参考にする
+                        if len(candidate_angles) > 0 and candidate_angles[0] < 0:
+                            avoid_angle = -60
+                            print(f"  危険判定なし。最も安全な角度が左側のため、左側（{avoid_angle}度）に回避")
+                        else:
+                            avoid_angle = 60
+                            print(f"  危険判定なし。最も安全な角度が右側のため、右側（{avoid_angle}度）に回避")
+                        self.consecutive_avoidance_count = 1
+
+                    self.last_avoidance_direction = avoid_angle
             else:
                 avoid_angle = selected_angle
 
