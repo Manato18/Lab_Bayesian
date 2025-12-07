@@ -724,12 +724,19 @@ class ControlPC:
         filename = f"crosscor_step{step:04d}.png"
         filepath = os.path.join(self.save_dir, filename)
         
-        # 保存
+        # 保存（PNG）
         plt.tight_layout()
         plt.savefig(filepath, dpi=150, bbox_inches='tight')
         plt.close(fig)
+
+        # 併せてデータ本体も.datで保存（サンプル番号, 左, 右）
+        dat_filename = f"crosscor_step{step:04d}.dat"
+        dat_filepath = os.path.join(self.save_dir, dat_filename)
+        data_to_save = np.column_stack((samples_l, crosscor_l, crosscor_r))
+        np.savetxt(dat_filepath, data_to_save, header="sample left right", comments='')
         
         print(f"  相互相関波形を保存: {filepath}")
+        print(f"  相関波形データを保存: {dat_filepath}")
 
     @staticmethod
     def _mm_to_m(mm_value):
@@ -770,6 +777,10 @@ class ControlPC:
 
             print(f"\nステップ{step}: 実機ロボットから要求受信")
             print(f"  相互相関データ: L={len(crosscor_l)} samples, R={len(crosscor_r)} samples")
+
+            # 実機側で左右マイクが逆配線のため、ここで左右を入れ替えて整合を取る
+            crosscor_l, crosscor_r = crosscor_r, crosscor_l
+            print("  ※ 受信データの左右チャンネルを入れ替えて処理します")
 
             # 相互相関波形をプロットして保存
             self.plot_correlation_waveforms(step, crosscor_l, crosscor_r)
