@@ -209,13 +209,34 @@ class Agent:
                 angles = np.arange(-30, 30, 5)
                 distances = np.arange(0.05, 0.75, 0.05)
                 check_distances = [d for d in distances if d <= 0.4]
-                dangerous_angles = []
 
+                # ステップ1: -21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
+                all_values = []
+                for angle in angles:
+                    for distance in check_distances:
+                        if distance in angle_results[angle]:
+                            value = angle_results[angle][distance]
+                            if value <= -21:  # -21以下のみを収集
+                                all_values.append(value)
+
+                # ステップ2: 上位10%の閾値を計算
+                if len(all_values) >= 5:  # 十分なデータがある場合
+                    danger_threshold = np.percentile(all_values, 90)
+                    print(f"危険判定閾値（壁の外を除いた上位10%）: {danger_threshold:.2f}")
+                    print(f"閾値計算に使用したデータ点数: {len(all_values)}")
+                else:
+                    # データが少なすぎる場合はフォールバック
+                    danger_threshold = -50
+                    print(f"警告: 閾値計算に使用できるデータが{len(all_values)}点のみです")
+                    print(f"フォールバック: 固定閾値{danger_threshold}を使用します")
+
+                # ステップ3: 閾値以上の箇所を危険として認定（壁の外-20も含む）
+                dangerous_angles = []
                 for angle in angles:
                     for distance in check_distances:
                         if distance in angle_results[angle]:
                             value_temp = angle_results[angle][distance]
-                            if value_temp >= -50:
+                            if value_temp >= danger_threshold:
                                 dangerous_angles.append(angle)
                                 break
 
@@ -347,13 +368,34 @@ class Agent:
                 angles = np.arange(-30, 30, 5)
                 distances = np.arange(0.05, 0.75, 0.05)
                 check_distances = [d for d in distances if d <= 0.4]
-                dangerous_angles = []
 
+                # ステップ1: -21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
+                all_values = []
+                for angle in angles:
+                    for distance in check_distances:
+                        if distance in angle_results[angle]:
+                            value = angle_results[angle][distance]
+                            if value <= -21:  # -21以下のみを収集
+                                all_values.append(value)
+
+                # ステップ2: 上位10%の閾値を計算
+                if len(all_values) >= 5:  # 十分なデータがある場合
+                    danger_threshold = np.percentile(all_values, 90)
+                    print(f"  危険判定閾値（壁の外を除いた上位10%）: {danger_threshold:.2f}")
+                    print(f"  閾値計算に使用したデータ点数: {len(all_values)}")
+                else:
+                    # データが少なすぎる場合はフォールバック
+                    danger_threshold = -50
+                    print(f"  警告: 閾値計算に使用できるデータが{len(all_values)}点のみです")
+                    print(f"  フォールバック: 固定閾値{danger_threshold}を使用します")
+
+                # ステップ3: 閾値以上の箇所を危険として認定（壁の外-20も含む）
+                dangerous_angles = []
                 for angle in angles:
                     for distance in check_distances:
                         if distance in angle_results[angle]:
                             value_temp = angle_results[angle][distance]
-                            if value_temp >= -50:
+                            if value_temp >= danger_threshold:
                                 dangerous_angles.append(angle)
                                 break
 
@@ -523,15 +565,34 @@ class Agent:
         
         # 距離0.5m以内のデータをチェック（既存の計算結果を活用）
         check_distances = [d for d in distances if d <= 0.4]  # 0.3m以下の距離のみ
-        
-        dangerous_angles = []
-        
-        # 既存の計算結果から-100以上の値をチェック
+
+        # ステップ1: -21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
+        all_values = []
         for angle in angles:
             for distance in check_distances:
                 if distance in angle_results[angle]:
                     value = angle_results[angle][distance]
-                    if value >= -50:
+                    if value <= -21:  # -21以下のみを収集
+                        all_values.append(value)
+
+        # ステップ2: 上位10%の閾値を計算
+        if len(all_values) >= 5:  # 十分なデータがある場合
+            danger_threshold = np.percentile(all_values, 90)
+            print(f"危険判定閾値（壁の外を除いた上位10%）: {danger_threshold:.2f}")
+            print(f"閾値計算に使用したデータ点数: {len(all_values)}")
+        else:
+            # データが少なすぎる場合はフォールバック
+            danger_threshold = -50
+            print(f"警告: 閾値計算に使用できるデータが{len(all_values)}点のみです")
+            print(f"フォールバック: 固定閾値{danger_threshold}を使用します")
+
+        # ステップ3: 閾値以上の箇所を危険として認定（壁の外-20も含む）
+        dangerous_angles = []
+        for angle in angles:
+            for distance in check_distances:
+                if distance in angle_results[angle]:
+                    value = angle_results[angle][distance]
+                    if value >= danger_threshold:
                         dangerous_angles.append(angle)
                         print(f"危険な角度を発見: {angle}度 (距離: {distance}m, 値: {value:.2f})")
         
