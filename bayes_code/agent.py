@@ -18,11 +18,6 @@ class Obj:
 
 class Agent:
     def __init__(self, bayesian, margin_space, folder_name, X, Y, sim=None, world=None):
-        self.trials = None
-        self.PositionX_all = None
-        self.PositionY_all = None
-        self.fd_all = None
-        self.pd_all = None
         self.Newobj = []  # Objインスタンスのリストとして障害物情報を管理
         
         self.step_idx = 0
@@ -60,7 +55,6 @@ class Agent:
         self.agent_radius = 0.3  # エージェントの半径 [m]
         self.collision_threshold = -50  # 衝突とみなす事後分布の閾値（初期値、動的に更新される）
 
-        self.trials = sim["trials"]
         self.PositionX = sim["init_pos"][0]
         self.PositionY = sim["init_pos"][1]
         self.fd = sim["init_pos"][2]
@@ -106,28 +100,78 @@ class Agent:
         data1, data2, data3, data4 = self.bayesian.update_belief(self.step_idx, y_el, y_er, current_obs_goback_dist_matrix_L, current_obs_goback_dist_matrix_R, current_confidence_matrix)
         return y_x, y_y, y_el_vec, y_er_vec, data1, data2, data3, data4
     
-    def one_step(self, step_idx, visualizer):
-        self.step_idx = step_idx
-        
-        # 現在の位置情報をCSVに保存
-        with open(self.csv_filename, 'a', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow([self.step_idx, self.PositionX, self.PositionY, self.fd, self.pd])
 
-        self.PositionX, self.PositionY, self.fd, self.pd, flag = self._sim_flight2(self.PositionX, self.PositionY, self.fd, self.pd, visualizer)
+    def _decide_emergency_avoidance_angle(self, dangerous_angles, candidate_angles):
+        """
+        緊急回避時の回避角度を決定する共通ロジック
 
-        return flag
+        Args:
+            dangerous_angles (list): 危険と判定された角度のリスト
+            candidate_angles (list): 候補角度のリスト（危険がない場合の参考用）
+
+        Returns:
+            float: 回避角度（-60度または60度）
+        """
+        if dangerous_angles:
+            # 左右で数を数える
+            left_count = len([angle for angle in dangerous_angles if angle < 0])
+            right_count = len([angle for angle in dangerous_angles if angle > 0])
+
+            print(f"  左側（負の角度）の危険な角度数: {left_count}")
+            print(f"  右側（正の角度）の危険な角度数: {right_count}")
+
+            # 連続回避の場合は前回と同じ方向に回避する
+            if self.last_avoidance_direction is not None and self.consecutive_avoidance_count > 0:
+                avoid_angle = self.last_avoidance_direction
+                print(f"  連続回避: 前回と同じ方向({avoid_angle}度)に回避")
+                self.consecutive_avoidance_count += 1
+            else:
+                # 通常の回避ロジック（少ない方に回避）
+                if left_count <= right_count:
+                    # 左側の危険が少ない（左側が安全）→ 左側に回避
+                    avoid_angle = -60
+                    print(f"  左側の危険が少ない（左側が安全）ため、左側（{avoid_angle}度）に回避")
+                else:
+                    # 右側の危険が少ない（右側が安全）→ 右側に回避
+                    avoid_angle = 60
+                    print(f"  右側の危険が少ない（右側が安全）ため、右側（{avoid_angle}度）に回避")
+                # 回避を開始したので、カウンターを1に設定
+                self.consecutive_avoidance_count = 1
+
+            # 今回の回避方向を記録
+            self.last_avoidance_direction = avoid_angle
+        else:
+            # 危険な角度が見つからなかった場合も±60度で回避
+            if self.last_avoidance_direction is not None and self.consecutive_avoidance_count > 0:
+                avoid_angle = self.last_avoidance_direction
+                print(f"  連続回避: 前回と同じ方向({avoid_angle}度)に回避")
+                self.consecutive_avoidance_count += 1
+            else:
+                # 最も安全な候補角度の方向を参考にする
+                if len(candidate_angles) > 0 and candidate_angles[0] < 0:
+                    avoid_angle = -60
+                    print(f"  危険判定なし。最も安全な角度が左側のため、左側（{avoid_angle}度）に回避")
+                else:
+                    avoid_angle = 60
+                    print(f"  危険判定なし。最も安全な角度が右側のため、右側（{avoid_angle}度）に回避")
+                self.consecutive_avoidance_count = 1
+
+            self.last_avoidance_direction = avoid_angle
+
+        return avoid_angle
 
     def _check_collision_at_position(self, new_x, new_y, X_sel, Y_sel, posterior_sel):
         """
-        指定位置にエージェントが移動した場合の衝突チェック
+        指定位置にエージェントが移動した場合の衝突チェック（回転座標系）
         エージェントの半径を考慮し、移動先を中心とした範囲内の事後分布値を確認
 
+        重要: すべての座標は回転座標系（原点=ロボット位置、Y軸=pd方向）で指定すること
+
         Args:
-            new_x (float): 移動後のx座標
-            new_y (float): 移動後のy座標
-            X_sel (np.ndarray): 事後分布のX座標
-            Y_sel (np.ndarray): 事後分布のY座標
+            new_x (float): 移動後のx座標（回転座標系）
+            new_y (float): 移動後のy座標（回転座標系）
+            X_sel (np.ndarray): 事後分布のX座標（回転座標系）
+            Y_sel (np.ndarray): 事後分布のY座標（回転座標系）
             posterior_sel (np.ndarray): 事後分布の値
 
         Returns:
@@ -150,176 +194,6 @@ class Agent:
             # 範囲内にデータがない場合は安全とみなす
             return True, -np.inf
 
-    def _sim_flight2(self, posx, posy, fd, pd, visualizer):
-        """
-        事後確率に応じたコウモリの飛行経路を生成する関数
-        ベイズ推論による事後確率分布を利用して障害物を検知し、回避行動を行う
-        障害物がないところへと移動するため、指向性範囲内で一番確率が低い場所に移動する。
-
-        Args:
-            posx (float): コウモリのx座標
-            posy (float): コウモリのy座標
-            fd (float): コウモリの飛行方向（度数法）
-            pd (float): コウモリのパルス発射方向（度数法）
-
-        Returns:
-            posx (float): 更新されたコウモリのx座標
-            posy (float): 更新されたコウモリのy座標
-            fd (float): 更新されたコウモリの飛行方向
-            pd (float): 更新されたコウモリのパルス発射方向
-        """
-
-        # 回避計算用: 前方2m範囲の事後分布データを取得
-        posterior_sel, X_sel, Y_sel = self._get_forward_posterior_data(
-            posx = self.PositionX,
-            posy = self.PositionY,
-            pd = self.pd,
-            fd = self.fd,
-        )
-
-        # 最初の8ステップは直線移動（回避なし）
-        print(f"\n=== ステップ {self.step_idx}: 回避のための事後分布分析 ===")
-        if self.step_idx < 8:
-            avoid_angle = 0.0
-            flag = True
-            print(f"ステップ{self.step_idx}: 直線移動モード（回避なし）")
-        else:
-            # 回避のための事後分布分析：前方左右30度を5度ごとに、0.7mまで0.05mごとに分析
-            angle_results, avoid_angle, value, flag, candidate_angles = self._analyze_posterior_for_avoidance(X_sel, Y_sel, posterior_sel)
-
-        # 通常時: 候補角度リストを順次チェック
-        if self.step_idx >= 8 and flag:
-            print("\n=== 候補角度の衝突チェック ===")
-            selected_angle = None
-
-            for candidate_angle in candidate_angles:
-                # 移動後の位置を計算
-                new_fd_temp = self.normalize_angle_deg(fd - candidate_angle)
-                new_posx_temp = posx + 0.07 * np.cos(np.deg2rad(new_fd_temp))
-                new_posy_temp = posy + 0.07 * np.sin(np.deg2rad(new_fd_temp))
-
-                # 衝突チェック
-                is_safe, max_posterior = self._check_collision_at_position(
-                    new_posx_temp, new_posy_temp, X_sel, Y_sel, posterior_sel
-                )
-
-                if is_safe:
-                    print(f"角度{candidate_angle}度は安全（範囲内の最大事後分布: {max_posterior:.2f}）")
-                    selected_angle = candidate_angle
-                    break
-                else:
-                    print(f"角度{candidate_angle}度は衝突の危険（範囲内の最大事後分布: {max_posterior:.2f}）-> 次の候補へ")
-
-            if selected_angle is None:
-                # すべての候補が衝突する場合は緊急回避
-                print("警告: すべての候補角度で衝突の危険があります。緊急回避モードに切り替えます。")
-                flag = False
-
-                # 緊急回避角度を決定（_analyze_posterior_for_avoidanceと同じロジック）
-                angles = np.arange(-30, 30, 5)
-                distances = np.arange(0.10, 0.75, 0.05)
-                check_distances = [d for d in distances if d < 0.2]
-
-                # ステップ1: 環境内の全範囲から-21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
-                all_values = self.bayesian.Px_yn_conf_log_current[self.bayesian.Px_yn_conf_log_current <= -21].flatten()
-
-                # ステップ2: 上位5%の閾値を計算
-                if len(all_values) >= 5:  # 十分なデータがある場合
-                    danger_threshold = np.percentile(all_values, 95)
-                    print(f"危険判定閾値（壁の外を除いた上位5%）: {danger_threshold:.2f}")
-                    print(f"閾値計算に使用したデータ点数: {len(all_values)}")
-                else:
-                    # データが少なすぎる場合はフォールバック
-                    danger_threshold = -50
-                    print(f"警告: 閾値計算に使用できるデータが{len(all_values)}点のみです")
-                    print(f"フォールバック: 固定閾値{danger_threshold}を使用します")
-
-                # 可視化用に閾値を保存
-                self.last_danger_threshold = danger_threshold
-
-                # ステップ3: 閾値以上の箇所を危険として認定（壁の外-20も含む）
-                dangerous_angles = []
-                for angle in angles:
-                    for distance in check_distances:
-                        if distance in angle_results[angle]:
-                            value_temp = angle_results[angle][distance]
-                            if value_temp >= danger_threshold:
-                                dangerous_angles.append(angle)
-                                break
-
-                if dangerous_angles:
-                    left_count = len([angle for angle in dangerous_angles if angle < 0])
-                    right_count = len([angle for angle in dangerous_angles if angle > 0])
-
-                    if self.last_avoidance_direction is not None and self.consecutive_avoidance_count > 0:
-                        avoid_angle = self.last_avoidance_direction
-                        print(f"連続回避: 前回と同じ方向({avoid_angle}度)に回避")
-                        self.consecutive_avoidance_count += 1
-                    else:
-                        if left_count <= right_count:
-                            # 左側の危険が少ない（左側が安全）→ 左側に回避
-                            avoid_angle = -60
-                            print(f"左側の危険が少ない（左側が安全）ため、左側（{avoid_angle}度）に回避")
-                        else:
-                            # 右側の危険が少ない（右側が安全）→ 右側に回避
-                            avoid_angle = 60
-                            print(f"右側の危険が少ない（右側が安全）ため、右側（{avoid_angle}度）に回避")
-                        self.consecutive_avoidance_count = 1
-
-                    self.last_avoidance_direction = avoid_angle
-                else:
-                    # 危険な角度がない場合は最も安全な角度を使用
-                    avoid_angle = candidate_angles[0] if len(candidate_angles) > 0 else 0.0
-                    print(f"緊急回避角度の決定に失敗。最も安全な角度{avoid_angle}度を使用します。")
-            else:
-                avoid_angle = selected_angle
-
-        # 最も安全な角度に移動する
-        new_fd = self.normalize_angle_deg(fd - avoid_angle)
-        new_pd = self.normalize_angle_deg(pd - avoid_angle)
-
-        # パルス放射方向の計算
-        if self.step_idx < 8:
-            # 最初の8ステップは進行方向より30度左
-            new_pd = self.normalize_angle_deg(fd + 30.0)
-            print(f"ステップ{self.step_idx}: パルス放射方向を左30度固定 (fd={fd:.1f}° → pd={new_pd:.1f}°)")
-        else:
-            # ステップ8以降は通常の計算
-            if self.step_idx >= 6:
-                # パルス方向を回避角度の1.5倍で調整
-                new_pd = self.normalize_angle_deg(fd - (avoid_angle * 1.5))
-
-        # 緊急回避時は飛行方向と放射方向を一致させる
-        if not flag:
-            new_pd = new_fd
-            print("緊急回避モード: 放射方向を飛行方向に合わせました")
-
-        print(f"{fd}度から{-avoid_angle}度があって{new_fd}度へ移動")
-        print(f"pd: {new_pd}度")
-
-        if flag == True:
-            # 通常移動: 0.07m
-            move_distance_m = 0.07
-            new_posx = posx + move_distance_m * np.cos(np.deg2rad(new_fd))
-            new_posy = posy + move_distance_m * np.sin(np.deg2rad(new_fd))
-        else:
-            # 緊急回避: 0.03m
-            move_distance_m = 0.03
-            new_posx = posx + move_distance_m * np.cos(np.deg2rad(new_fd))
-            new_posy = posy + move_distance_m * np.sin(np.deg2rad(new_fd))
-
-        # 可視化: 現在位置と次の位置をプロット
-        current_pos = {'x': posx, 'y': posy, 'fd': fd, 'pd': pd}
-        next_pos = {'x': new_posx, 'y': new_posy, 'fd': new_fd, 'pd': new_pd}
-        self._plot_posterior_global(current_pos, next_pos, move_distance_m)
-
-        # 現在位置を前回位置として保存（次のステップ用）
-        self.prev_x = posx
-        self.prev_y = posy
-        self.prev_fd = fd
-        self.prev_pd = pd
-
-        return new_posx, new_posy, new_fd, new_pd, flag
 
     def calculate_avoidance_command(self, current_position, step):
         """
@@ -346,6 +220,19 @@ class Agent:
             fd=current_position['fd']
         )
 
+        # 衝突判定閾値を計算（環境全体の事後分布から上位5%を使用）
+        all_values = self.bayesian.Px_yn_conf_log_current[self.bayesian.Px_yn_conf_log_current <= -21].flatten()
+        if len(all_values) >= 5:
+            danger_threshold = np.percentile(all_values, 95)
+            print(f"  [閾値計算] 危険判定閾値（環境全体の上位5%）: {danger_threshold:.2f} (データ点数: {len(all_values)})")
+        else:
+            danger_threshold = -50
+            print(f"  [閾値計算] 警告: データが{len(all_values)}点のみ、固定閾値{danger_threshold}を使用")
+
+        # 可視化用と衝突判定用に閾値を保存
+        self.last_danger_threshold = danger_threshold
+        self.collision_threshold = danger_threshold
+
         # 最初の8ステップは直線移動（回避なし）
         if step < 8:
             avoid_angle = 0.0
@@ -354,7 +241,7 @@ class Agent:
         else:
             # 回避角度を計算
             angle_results, avoid_angle, value, flag, candidate_angles = \
-                self._analyze_posterior_for_avoidance(X_sel, Y_sel, posterior_sel)
+                self._analyze_posterior_for_avoidance(X_sel, Y_sel, posterior_sel, danger_threshold)
             print(f"  [移動指令計算] 回避角度: {avoid_angle:.1f}度, フラグ: {flag}")
 
         # 通常時: 候補角度リストを順次チェック
@@ -363,14 +250,18 @@ class Agent:
             selected_angle = None
 
             for candidate_angle in candidate_angles:
-                # 移動後の位置を計算
-                new_fd_temp = self.normalize_angle_deg(current_position['fd'] - candidate_angle)
-                new_posx_temp = current_position['x'] + 0.07 * np.cos(np.deg2rad(new_fd_temp))
-                new_posy_temp = current_position['y'] + 0.07 * np.sin(np.deg2rad(new_fd_temp))
+                # 回転座標系で移動後の位置を計算
+                # 回転座標系では：原点(0,0)=ロボット位置, Y軸=pd方向
+                # pdに対する回避後の相対角度を計算
+                relative_angle = (current_position['fd'] - current_position['pd']) - candidate_angle
 
-                # 衝突チェック
+                # 回転座標系での移動後の位置（移動距離0.07m）
+                new_x_rot = 0.07 * np.sin(np.deg2rad(relative_angle))
+                new_y_rot = 0.07 * np.cos(np.deg2rad(relative_angle))
+
+                # 衝突チェック（回転座標系で実行）
                 is_safe, max_posterior = self._check_collision_at_position(
-                    new_posx_temp, new_posy_temp, X_sel, Y_sel, posterior_sel
+                    new_x_rot, new_y_rot, X_sel, Y_sel, posterior_sel
                 )
 
                 if is_safe:
@@ -389,24 +280,7 @@ class Agent:
                 distances = np.arange(0.10, 0.75, 0.05)
                 check_distances = [d for d in distances if d < 0.2]
 
-                # ステップ1: 環境内の全範囲から-21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
-                all_values = self.bayesian.Px_yn_conf_log_current[self.bayesian.Px_yn_conf_log_current <= -21].flatten()
-
-                # ステップ2: 上位5%の閾値を計算
-                if len(all_values) >= 5:  # 十分なデータがある場合
-                    danger_threshold = np.percentile(all_values, 95)
-                    print(f"  危険判定閾値（環境全体の上位5%）: {danger_threshold:.2f}")
-                    print(f"  使用データ点数: {len(all_values)}")
-                else:
-                    # データが少なすぎる場合はフォールバック
-                    danger_threshold = -50
-                    print(f"  警告: データが{len(all_values)}点のみ、固定閾値{danger_threshold}を使用")
-
-                # 可視化用と衝突判定用に閾値を保存
-                self.last_danger_threshold = danger_threshold
-                self.collision_threshold = danger_threshold  # 衝突判定閾値も更新
-
-                # ステップ3: 閾値以上の箇所を危険として認定（壁の外-20も含む）
+                # 閾値以上の箇所を危険として認定（壁の外-20も含む）
                 dangerous_angles = []
                 for angle in angles:
                     for distance in check_distances:
@@ -416,45 +290,13 @@ class Agent:
                                 dangerous_angles.append(angle)
                                 break
 
-                if dangerous_angles:
-                    left_count = len([angle for angle in dangerous_angles if angle < 0])
-                    right_count = len([angle for angle in dangerous_angles if angle > 0])
-
-                    if self.last_avoidance_direction is not None and self.consecutive_avoidance_count > 0:
-                        avoid_angle = self.last_avoidance_direction
-                        print(f"  連続回避: 前回と同じ方向({avoid_angle}度)に回避")
-                        self.consecutive_avoidance_count += 1
-                    else:
-                        if left_count <= right_count:
-                            # 左側の危険が少ない（左側が安全）→ 左側に回避
-                            avoid_angle = -60
-                            print(f"  左側の危険が少ない（左側が安全）ため、左側（{avoid_angle}度）に回避")
-                        else:
-                            # 右側の危険が少ない（右側が安全）→ 右側に回避
-                            avoid_angle = 60
-                            print(f"  右側の危険が少ない（右側が安全）ため、右側（{avoid_angle}度）に回避")
-                        self.consecutive_avoidance_count = 1
-
-                    self.last_avoidance_direction = avoid_angle
-                else:
-                    # 危険な角度が見つからなかった場合も±60度で回避
-                    if self.last_avoidance_direction is not None and self.consecutive_avoidance_count > 0:
-                        avoid_angle = self.last_avoidance_direction
-                        print(f"  連続回避: 前回と同じ方向({avoid_angle}度)に回避")
-                        self.consecutive_avoidance_count += 1
-                    else:
-                        # 最も安全な候補角度の方向を参考にする
-                        if len(candidate_angles) > 0 and candidate_angles[0] < 0:
-                            avoid_angle = -60
-                            print(f"  危険判定なし。最も安全な角度が左側のため、左側（{avoid_angle}度）に回避")
-                        else:
-                            avoid_angle = 60
-                            print(f"  危険判定なし。最も安全な角度が右側のため、右側（{avoid_angle}度）に回避")
-                        self.consecutive_avoidance_count = 1
-
-                    self.last_avoidance_direction = avoid_angle
+                # 共通メソッドで回避角度を決定
+                avoid_angle = self._decide_emergency_avoidance_angle(dangerous_angles, candidate_angles)
             else:
                 avoid_angle = selected_angle
+                # 通常移動に戻ったので連続回避カウンターをリセット
+                self.consecutive_avoidance_count = 0
+                self.last_avoidance_direction = None
 
         # 新しい方向を計算
         new_fd = self.normalize_angle_deg(current_position['fd'] - avoid_angle)
@@ -466,10 +308,8 @@ class Agent:
             new_pd = self.normalize_angle_deg(current_position['fd'] + 30.0)
             print(f"  [移動指令計算] ステップ{step}: パルス放射方向を左30度固定 (fd={current_position['fd']:.1f}° → pd={new_pd:.1f}°)")
         else:
-            # ステップ8以降は通常の計算
-            if step >= 6:
-                # パルス方向を回避角度の1.5倍で調整
-                new_pd = self.normalize_angle_deg(current_position['fd'] - (avoid_angle * 1.5))
+            # ステップ8以降は回避角度の1.5倍で調整
+            new_pd = self.normalize_angle_deg(current_position['fd'] - (avoid_angle * 1.5))
 
         # 緊急回避時は飛行方向と放射方向を一致させる
         if not flag:
@@ -519,11 +359,20 @@ class Agent:
 
         return command, new_position, emergency_avoidance
 
-    def _analyze_posterior_for_avoidance(self, X_sel, Y_sel, posterior_sel):
+    def _analyze_posterior_for_avoidance(self, X_sel, Y_sel, posterior_sel, danger_threshold):
         """
         回避のための事後分布分析
         前方の左右30度までを5度ごとに、0.7mまでの値を0.05mごとに足して
         それぞれの角度での合計を表示する
+
+        Args:
+            X_sel (np.ndarray): 事後分布のX座標（回転座標系）
+            Y_sel (np.ndarray): 事後分布のY座標（回転座標系）
+            posterior_sel (np.ndarray): 事後分布の値
+            danger_threshold (float): 危険判定閾値
+
+        Returns:
+            tuple: (angle_results, min_angle, min_value, flag, candidate_angles)
         """
         # 角度範囲の設定（左右30度、5度ごと）
         angles = np.arange(-30, 30, 5)  # -30, -25, -20, ..., 25, 30
@@ -600,30 +449,14 @@ class Agent:
         print("=" * 50)
         
         
-        # 新しい回避機能：既存の計算結果を活用して角度-30度から30度の範囲で距離0.5m以内に事後分布の値が-10以上のものがあれば左右で数を数えて少ない方に回避する
-        print("\n=== 新しい回避機能のチェック ===")
-        
+        # 新しい回避機能：既存の計算結果を活用して角度-30度から30度の範囲で距離0.2m未満に閾値以上のものがあれば左右で数を数えて少ない方に回避する
+        print("\n=== 緊急回避判定 ===")
+        print(f"使用する危険判定閾値: {danger_threshold:.2f}")
+
         # 距離0.2m未満のデータをチェック（既存の計算結果を活用）
         check_distances = [d for d in distances if d < 0.2]  # 0.2m未満の距離のみ
 
-        # ステップ1: 環境内の全範囲から-21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
-        all_values = self.bayesian.Px_yn_conf_log_current[self.bayesian.Px_yn_conf_log_current <= -21].flatten()
-
-        # ステップ2: 上位5%の閾値を計算
-        if len(all_values) >= 5:  # 十分なデータがある場合
-            danger_threshold = np.percentile(all_values, 95)
-            print(f"危険判定閾値（環境全体の上位5%）: {danger_threshold:.2f}")
-            print(f"使用データ点数: {len(all_values)}")
-        else:
-            # データが少なすぎる場合はフォールバック
-            danger_threshold = -50
-            print(f"警告: データが{len(all_values)}点のみ、固定閾値{danger_threshold}を使用")
-
-        # 可視化用と衝突判定用に閾値を保存
-        self.last_danger_threshold = danger_threshold
-        self.collision_threshold = danger_threshold  # 衝突判定閾値も更新
-
-        # ステップ3: 閾値以上の箇所を危険として認定（壁の外-20も含む）
+        # 閾値以上の箇所を危険として認定（壁の外-20も含む）
         dangerous_angles = []
         for angle in angles:
             for distance in check_distances:
@@ -632,37 +465,14 @@ class Agent:
                     if value >= danger_threshold:
                         dangerous_angles.append(angle)
                         print(f"危険な角度を発見: {angle}度 (距離: {distance}m, 値: {value:.2f})")
-        
+
         if dangerous_angles:
-            # 左右で数を数える
-            left_count = len([angle for angle in dangerous_angles if angle < 0])
-            right_count = len([angle for angle in dangerous_angles if angle > 0])
-            
-            print(f"左側（負の角度）の危険な角度数: {left_count}")
-            print(f"右側（正の角度）の危険な角度数: {right_count}")
-            
-            # 連続回避の場合は前回と同じ方向に回避する
-            if self.last_avoidance_direction is not None and self.consecutive_avoidance_count > 0:
-                # 前回と同じ方向に回避
-                avoidance_angle = self.last_avoidance_direction
-                print(f"連続回避: 前回と同じ方向({avoidance_angle}度)に回避")
-                self.consecutive_avoidance_count += 1
-            else:
-                # 通常の回避ロジック（少ない方に回避）
-                if left_count <= right_count:
-                    # 左側の危険が少ない（左側が安全）→ 左側に回避
-                    avoidance_angle = -60
-                    print(f"左側の危険が少ない（左側が安全）ため、左側（{avoidance_angle}度）に回避")
-                else:
-                    # 右側の危険が少ない（右側が安全）→ 右側に回避
-                    avoidance_angle = 60
-                    print(f"右側の危険が少ない（右側が安全）ため、右側（{avoidance_angle}度）に回避")
-                # 回避を開始したので、カウンターを1に設定
-                self.consecutive_avoidance_count = 1
-            
-            # 今回の回避方向を記録
-            self.last_avoidance_direction = avoidance_angle
-            
+            # 通常時の候補角度リストを作成（安全な順にソート）
+            sorted_angles = sorted(angles, key=lambda a: angle_results[a]['total'])
+
+            # 共通メソッドで回避角度を決定
+            avoidance_angle = self._decide_emergency_avoidance_angle(dangerous_angles, sorted_angles)
+
             print("=" * 50)
             # 危険な角度で60度回る場合は、Falseを返して進行しないようにする。
             return angle_results, avoidance_angle, -10.0, False, []  # 緊急回避時は空リストを返す
