@@ -654,13 +654,13 @@ class Agent:
             else:
                 # 通常の回避ロジック（少ない方に回避）
                 if left_count <= right_count:
-                    # 左側が少ない場合、右側に回避
-                    avoidance_angle = 60
-                    print(f"左側が少ないため、右側（{avoidance_angle}度）に回避")
-                else:
-                    # 右側が少ない場合、左側に回避
+                    # 左側の危険が少ない（左側が安全）→ 左側に回避
                     avoidance_angle = -60
-                    print(f"右側が少ないため、左側（{avoidance_angle}度）に回避")
+                    print(f"左側の危険が少ない（左側が安全）ため、左側（{avoidance_angle}度）に回避")
+                else:
+                    # 右側の危険が少ない（右側が安全）→ 右側に回避
+                    avoidance_angle = 60
+                    print(f"右側の危険が少ない（右側が安全）ため、右側（{avoidance_angle}度）に回避")
                 # 回避を開始したので、カウンターを1に設定
                 self.consecutive_avoidance_count = 1
             
