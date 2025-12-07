@@ -480,9 +480,6 @@ class Agent:
         print("危険な角度は見つかりませんでした。従来の回避方法を使用します。")
         print("=" * 50)
 
-        # 危険な角度がない場合は連続回避カウンターをリセット
-        self.consecutive_avoidance_count = 0
-
         # 通常時の候補角度リストを作成（安全な順にソート）
         sorted_angles = sorted(angles, key=lambda a: angle_results[a]['total'])
 
