@@ -221,7 +221,7 @@ class Agent:
                 check_distances = [d for d in distances if d < 0.2]
 
                 # ステップ1: 環境内の全範囲から-21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
-                all_values = self.bayesian.PosteriorProb[self.bayesian.PosteriorProb <= -21].flatten()
+                all_values = self.bayesian.Px_yn_conf_log_current[self.bayesian.Px_yn_conf_log_current <= -21].flatten()
 
                 # ステップ2: 上位5%の閾値を計算
                 if len(all_values) >= 5:  # 十分なデータがある場合
@@ -390,7 +390,7 @@ class Agent:
                 check_distances = [d for d in distances if d < 0.2]
 
                 # ステップ1: 環境内の全範囲から-21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
-                all_values = self.bayesian.PosteriorProb[self.bayesian.PosteriorProb <= -21].flatten()
+                all_values = self.bayesian.Px_yn_conf_log_current[self.bayesian.Px_yn_conf_log_current <= -21].flatten()
 
                 # ステップ2: 上位5%の閾値を計算
                 if len(all_values) >= 5:  # 十分なデータがある場合
@@ -593,7 +593,7 @@ class Agent:
         check_distances = [d for d in distances if d < 0.2]  # 0.2m未満の距離のみ
 
         # ステップ1: 環境内の全範囲から-21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
-        all_values = self.bayesian.PosteriorProb[self.bayesian.PosteriorProb <= -21].flatten()
+        all_values = self.bayesian.Px_yn_conf_log_current[self.bayesian.Px_yn_conf_log_current <= -21].flatten()
 
         # ステップ2: 上位5%の閾値を計算
         if len(all_values) >= 5:  # 十分なデータがある場合
