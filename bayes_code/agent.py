@@ -218,7 +218,7 @@ class Agent:
                 # 緊急回避角度を決定（_analyze_posterior_for_avoidanceと同じロジック）
                 angles = np.arange(-30, 30, 5)
                 distances = np.arange(0.05, 0.75, 0.05)
-                check_distances = [d for d in distances if d <= 0.4]
+                check_distances = [d for d in distances if d <= 0.2]
 
                 # ステップ1: -21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
                 all_values = []
@@ -393,7 +393,7 @@ class Agent:
                 # 緊急回避角度を決定
                 angles = np.arange(-30, 30, 5)
                 distances = np.arange(0.05, 0.75, 0.05)
-                check_distances = [d for d in distances if d <= 0.4]
+                check_distances = [d for d in distances if d <= 0.2]
 
                 # ステップ1: -21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
                 all_values = []
@@ -601,8 +601,8 @@ class Agent:
         # 新しい回避機能：既存の計算結果を活用して角度-30度から30度の範囲で距離0.5m以内に事後分布の値が-10以上のものがあれば左右で数を数えて少ない方に回避する
         print("\n=== 新しい回避機能のチェック ===")
         
-        # 距離0.5m以内のデータをチェック（既存の計算結果を活用）
-        check_distances = [d for d in distances if d <= 0.4]  # 0.3m以下の距離のみ
+        # 距離0.2m以内のデータをチェック（既存の計算結果を活用）
+        check_distances = [d for d in distances if d <= 0.2]  # 0.2m以下の距離のみ
 
         # ステップ1: -21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
         all_values = []
