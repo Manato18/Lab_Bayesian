@@ -47,6 +47,15 @@ class Agent:
         # 連続回避カウンター
         self.consecutive_avoidance_count = 0
 
+        # 前回の位置を保存（可視化用）
+        self.prev_x = None
+        self.prev_y = None
+        self.prev_fd = None
+        self.prev_pd = None
+
+        # 危険判定閾値を保存（可視化用）
+        self.last_danger_threshold = None
+
         # エージェントの物理的な大きさを考慮した衝突判定用パラメータ
         self.agent_radius = 0.3  # エージェントの半径 [m]
         self.collision_threshold = -50  # 衝突とみなす事後分布の閾値
@@ -58,6 +67,7 @@ class Agent:
         self.pd = sim["init_pos"][3]
 
         self.bayesian = bayesian
+        self.world = world  # 可視化で障害物情報を使用するため保存
     
     def normalize_angle_deg(self, angle_deg):
         """
@@ -159,8 +169,8 @@ class Agent:
             pd (float): 更新されたコウモリのパルス発射方向
         """
 
-        # 事後分布をプロットしてmovieフォルダに保存（移動前）
-        posterior_sel, X_sel, Y_sel = self._plot_posterior_distribution(
+        # 回避計算用: 前方2m範囲の事後分布データを取得
+        posterior_sel, X_sel, Y_sel = self._get_forward_posterior_data(
             posx = self.PositionX,
             posy = self.PositionY,
             pd = self.pd,
@@ -230,6 +240,9 @@ class Agent:
                     print(f"警告: 閾値計算に使用できるデータが{len(all_values)}点のみです")
                     print(f"フォールバック: 固定閾値{danger_threshold}を使用します")
 
+                # 可視化用に閾値を保存
+                self.last_danger_threshold = danger_threshold
+
                 # ステップ3: 閾値以上の箇所を危険として認定（壁の外-20も含む）
                 dangerous_angles = []
                 for angle in angles:
@@ -292,13 +305,26 @@ class Agent:
 
         if flag == True:
             # 通常移動: 0.07m
-            new_posx = posx + 0.07 * np.cos(np.deg2rad(new_fd))
-            new_posy = posy + 0.07 * np.sin(np.deg2rad(new_fd))
+            move_distance_m = 0.07
+            new_posx = posx + move_distance_m * np.cos(np.deg2rad(new_fd))
+            new_posy = posy + move_distance_m * np.sin(np.deg2rad(new_fd))
         else:
             # 緊急回避: 0.03m
-            new_posx = posx + 0.03 * np.cos(np.deg2rad(new_fd))
-            new_posy = posy + 0.03 * np.sin(np.deg2rad(new_fd))
-        
+            move_distance_m = 0.03
+            new_posx = posx + move_distance_m * np.cos(np.deg2rad(new_fd))
+            new_posy = posy + move_distance_m * np.sin(np.deg2rad(new_fd))
+
+        # 可視化: 現在位置と次の位置をプロット
+        current_pos = {'x': posx, 'y': posy, 'fd': fd, 'pd': pd}
+        next_pos = {'x': new_posx, 'y': new_posy, 'fd': new_fd, 'pd': new_pd}
+        self._plot_posterior_global(current_pos, next_pos, move_distance_m)
+
+        # 現在位置を前回位置として保存（次のステップ用）
+        self.prev_x = posx
+        self.prev_y = posy
+        self.prev_fd = fd
+        self.prev_pd = pd
+
         return new_posx, new_posy, new_fd, new_pd, flag
 
     def calculate_avoidance_command(self, current_position, step):
@@ -318,8 +344,8 @@ class Agent:
                 - command (dict): 移動指令 {'avoidance_direction', 'move_distance', 'pulse_direction'}
                 - new_position (dict): 新しい位置 {'x', 'y', 'fd', 'pd'}
         """
-        # 事後分布をプロット
-        posterior_sel, X_sel, Y_sel = self._plot_posterior_distribution(
+        # 回避計算用: 前方2m範囲の事後分布データを取得
+        posterior_sel, X_sel, Y_sel = self._get_forward_posterior_data(
             posx=current_position['x'],
             posy=current_position['y'],
             pd=current_position['pd'],
@@ -388,6 +414,9 @@ class Agent:
                     danger_threshold = -50
                     print(f"  警告: 閾値計算に使用できるデータが{len(all_values)}点のみです")
                     print(f"  フォールバック: 固定閾値{danger_threshold}を使用します")
+
+                # 可視化用に閾値を保存
+                self.last_danger_threshold = danger_threshold
 
                 # ステップ3: 閾値以上の箇所を危険として認定（壁の外-20も含む）
                 dangerous_angles = []
@@ -473,10 +502,19 @@ class Agent:
         
         # 緊急回避フラグ（flagがFalseの場合が緊急回避）
         emergency_avoidance = not flag
-        
+
         print(f"  [移動指令計算] 完了: 回避={avoid_angle:.1f}度, 移動={move_distance:.1f}mm, 緊急回避={emergency_avoidance}")
         print(f"  [移動指令計算] 新位置: ({new_x:.3f}, {new_y:.3f}), fd={new_fd:.1f}度, pd={new_pd:.1f}度")
-        
+
+        # 可視化: 現在位置と次の位置をプロット
+        self._plot_posterior_global(current_position, new_position, move_distance_m)
+
+        # 現在位置を前回位置として保存（次のステップ用）
+        self.prev_x = current_position['x']
+        self.prev_y = current_position['y']
+        self.prev_fd = current_position['fd']
+        self.prev_pd = current_position['pd']
+
         return command, new_position, emergency_avoidance
 
     def _analyze_posterior_for_avoidance(self, X_sel, Y_sel, posterior_sel):
@@ -586,6 +624,9 @@ class Agent:
             print(f"警告: 閾値計算に使用できるデータが{len(all_values)}点のみです")
             print(f"フォールバック: 固定閾値{danger_threshold}を使用します")
 
+        # 可視化用に閾値を保存
+        self.last_danger_threshold = danger_threshold
+
         # ステップ3: 閾値以上の箇所を危険として認定（壁の外-20も含む）
         dangerous_angles = []
         for angle in angles:
@@ -641,11 +682,24 @@ class Agent:
 
         return angle_results, min_angle, min_value, True, sorted_angles
 
-    def _plot_posterior_distribution(self, posx, posy, fd, pd):
+    def _get_forward_posterior_data(self, posx, posy, fd, pd):
         """
-        コウモリの位置posx,posy、頭部方向pd（度数法）を使い、
-        コウモリ前方2m範囲だけを「コウモリが下中央・上向き」でプロットし、
-        その範囲の事後分布値もprintで出力する
+        回避計算用: ロボット前方2m範囲の事後分布データを取得
+
+        ロボットの位置と頭部方向pdを使い、前方2m範囲の事後分布データを
+        ロボット中心の回転座標系で取得する（可視化はしない）
+
+        Args:
+            posx (float): ロボットのx座標
+            posy (float): ロボットのy座標
+            fd (float): 飛行方向（度数法）
+            pd (float): パルス放射方向（度数法）
+
+        Returns:
+            tuple: (posterior_sel, X_sel, Y_sel)
+                - posterior_sel: 前方2m範囲の事後分布値
+                - X_sel: 回転座標系でのx座標
+                - Y_sel: 回転座標系でのy座標
         """
         def rotate_points(x, y, origin_x, origin_y, angle_rad):
             x_shifted = x - origin_x
@@ -654,11 +708,6 @@ class Agent:
             y_rot = x_shifted * np.sin(angle_rad) + y_shifted * np.cos(angle_rad)
             return x_rot, y_rot
 
-        # movieフォルダが存在しない場合は作成
-        movie_dir = config.output_dir_movie_posterior
-        if not os.path.exists(movie_dir):
-            os.makedirs(movie_dir)
-
         posterior_data = self.bayesian.Px_yn_conf_log_current
 
         # X, Yはmeshgrid想定
@@ -666,19 +715,18 @@ class Agent:
         Y_flat = self.Y.flatten()
         posterior_flat = posterior_data.flatten()
 
-        # コウモリ位置・頭部方向
+        # ロボット位置・頭部方向
         bat_x = posx
         bat_y = posy
         bat_angle_deg = pd  # 度数法
-        
-        # 度数法をラジアンに変換し、コウモリが上向きになるように回転
-        # pdは進行方向（度数法）なので、これを上向き（90度）に合わせる
+
+        # 度数法をラジアンに変換し、ロボットが上向きになるように回転
         bat_angle_rad = np.deg2rad(-bat_angle_deg+90)  # 90度引いて上向きに調整
 
-        # コウモリ中心・頭部方向上向きに回転
+        # ロボット中心・頭部方向上向きに回転
         X_rot, Y_rot = rotate_points(X_flat, Y_flat, bat_x, bat_y, bat_angle_rad)
 
-        # 前方2m範囲だけ抽出（x方向±1m, y方向0〜2m）
+        # 前方2m範囲だけ抽出（x方向±2m, y方向0〜2m）
         mask = (Y_rot >= 0) & (Y_rot <= 2.0) & (np.abs(X_rot) <= 2.0)
         X_sel = X_rot[mask]
         Y_sel = Y_rot[mask]
@@ -690,47 +738,145 @@ class Agent:
         Y_sel = Y_sel[finite_mask]
         posterior_sel = posterior_sel[finite_mask]
 
-        # 前方2m範囲の事後分布値をprint
-        print("コウモリ前方2m範囲の事後分布値:")
-        print(posterior_sel.shape)
-        print(X_sel.shape)
+        return posterior_sel, X_sel, Y_sel
 
-        # プロット
-        plt.figure(figsize=(8, 8))
-        if len(X_sel) > 0:
-            # 等高線図の描画
-            contour = plt.tricontourf(X_sel, Y_sel, posterior_sel, levels=100, cmap='viridis')
-            
-            # カラーバーの詳細設定（3桁固定フォーマット）
-            cbar = plt.colorbar(contour, ax=plt.gca(), shrink=0.8, aspect=20)
-            cbar.ax.tick_params(labelsize=10)
-            
-            # カラーバーの目盛りを3桁固定フォーマットで設定
-            tick_values = np.linspace(np.min(posterior_sel), np.max(posterior_sel), 6)
-            cbar.set_ticks(tick_values)
-            # 固定幅フォーマット（例: -45.2, -36.1, -27.0, -17.9, -8.8, 0.3）
-            tick_labels = []
-            for val in tick_values:
-                if val < 0:
-                    tick_labels.append(f'{val:5.1f}')  # 負の数は5文字幅
-                else:
-                    tick_labels.append(f' {val:4.1f}')  # 正の数は6文字幅（空白含む）
-            cbar.set_ticklabels(tick_labels)
+    def _plot_posterior_global(self, current_pos, next_pos, move_distance_m):
+        """
+        事後分布を全体表示（回転なし、ワールド座標系）で可視化
+
+        前回位置→現在位置→次の位置（回避角度分回転+移動距離分直進）を
+        頭部方向（矢印）と放射方向（線）付きで表示する
+
+        Args:
+            current_pos (dict): 現在位置 {'x', 'y', 'fd', 'pd'}
+            next_pos (dict): 次の位置（回避後） {'x', 'y', 'fd', 'pd'}
+            move_distance_m (float): 実際の移動距離 [m]（現在は未使用）
+        """
+        # 事後分布データ取得
+        posterior_data = self.bayesian.Px_yn_conf_log_current
+
+        # 出力ディレクトリの作成
+        movie_dir = config.output_dir_movie_posterior
+        os.makedirs(movie_dir, exist_ok=True)
+
+        # プロット作成
+        plt.figure(figsize=(12, 12))
+
+        # 事後分布の等高線図（全体、回転なし）
+        contour = plt.contourf(self.X, self.Y, posterior_data, levels=100, cmap='viridis')
+        cbar = plt.colorbar(contour, shrink=0.8, aspect=20)
+        cbar.set_label('Log Posterior Probability', fontsize=12)
+
+        # 障害物をプロット
+        if self.world is not None and self.world.pole_x is not None and len(self.world.pole_x) > 0:
+            plt.scatter(self.world.pole_x, self.world.pole_y,
+                       c='red', marker='x', s=100, linewidths=3,
+                       label='障害物', zorder=5)
+
+        # 危険領域をグレーの散布図でプロット
+        if self.last_danger_threshold is not None:
+            # 事後分布全体から閾値以上の場所を抽出
+            danger_mask = posterior_data >= self.last_danger_threshold
+            X_danger = self.X[danger_mask]
+            Y_danger = self.Y[danger_mask]
+
+            if len(X_danger) > 0:
+                plt.scatter(X_danger, Y_danger,
+                           c='gray', marker='.', s=10, alpha=0.5,
+                           label=f'危険領域（閾値≥{self.last_danger_threshold:.1f}）', zorder=4)
+                print(f"  [可視化] 危険領域: {len(X_danger)}点をプロット（閾値: {self.last_danger_threshold:.2f}）")
+
+        # 矢印と線の長さ
+        arrow_len = 0.4  # 頭部方向（矢印）の長さ
+        line_len = 0.35  # 放射方向（線のみ）の長さ
+
+        # 前回位置（もしあれば）- 薄めの水色
+        if self.prev_x is not None:
+            color_prev = 'lightblue'
+            plt.plot(self.prev_x, self.prev_y, 'o', color=color_prev,
+                    markersize=12, label='前回位置', zorder=4)
+
+            # 前回の頭部方向（fd）：矢印
+            dx_fd = arrow_len * np.cos(np.deg2rad(self.prev_fd))
+            dy_fd = arrow_len * np.sin(np.deg2rad(self.prev_fd))
+            plt.arrow(self.prev_x, self.prev_y, dx_fd, dy_fd,
+                     head_width=0.15, head_length=0.1,
+                     fc=color_prev, ec=color_prev, linewidth=2.5,
+                     label='前回頭部方向', zorder=4)
+
+            # 前回の放射方向（pd）：線のみ
+            dx_pd = line_len * np.cos(np.deg2rad(self.prev_pd))
+            dy_pd = line_len * np.sin(np.deg2rad(self.prev_pd))
+            plt.plot([self.prev_x, self.prev_x + dx_pd],
+                    [self.prev_y, self.prev_y + dy_pd],
+                    color=color_prev, linewidth=2.5, linestyle='-',
+                    label='前回放射方向', zorder=4)
+
+        # 現在位置 - 赤色
+        color_current = 'red'
+        plt.plot(current_pos['x'], current_pos['y'], 'o', color=color_current,
+                markersize=14, label='現在位置', zorder=4)
+
+        # 現在の頭部方向（fd）：矢印
+        dx_fd = arrow_len * np.cos(np.deg2rad(current_pos['fd']))
+        dy_fd = arrow_len * np.sin(np.deg2rad(current_pos['fd']))
+        plt.arrow(current_pos['x'], current_pos['y'], dx_fd, dy_fd,
+                 head_width=0.15, head_length=0.1,
+                 fc=color_current, ec=color_current, linewidth=2.5,
+                 label='現在頭部方向', zorder=4)
+
+        # 現在の放射方向（pd）：線のみ
+        dx_pd = line_len * np.cos(np.deg2rad(current_pos['pd']))
+        dy_pd = line_len * np.sin(np.deg2rad(current_pos['pd']))
+        plt.plot([current_pos['x'], current_pos['x'] + dx_pd],
+                [current_pos['y'], current_pos['y'] + dy_pd],
+                color=color_current, linewidth=2.5, linestyle='-',
+                label='現在放射方向', zorder=4)
+
+        # 次の位置（回避角度分回転+移動距離分直進）- 薄めの緑色
+        color_next = 'lightgreen'
+        plt.plot(next_pos['x'], next_pos['y'], 'o', color=color_next,
+                markersize=12, label='次の位置（回避後）', zorder=4)
+
+        # 次の頭部方向（fd）：矢印
+        dx_fd = arrow_len * np.cos(np.deg2rad(next_pos['fd']))
+        dy_fd = arrow_len * np.sin(np.deg2rad(next_pos['fd']))
+        plt.arrow(next_pos['x'], next_pos['y'], dx_fd, dy_fd,
+                 head_width=0.15, head_length=0.1,
+                 fc=color_next, ec=color_next, linewidth=2.5,
+                 label='次回頭部方向', zorder=4)
+
+        # 次の放射方向（pd）：線のみ
+        dx_pd = line_len * np.cos(np.deg2rad(next_pos['pd']))
+        dy_pd = line_len * np.sin(np.deg2rad(next_pos['pd']))
+        plt.plot([next_pos['x'], next_pos['x'] + dx_pd],
+                [next_pos['y'], next_pos['y'] + dy_pd],
+                color=color_next, linewidth=2.5, linestyle='-',
+                label='次回放射方向', zorder=4)
+
+        # 移動経路を線で結ぶ
+        if self.prev_x is not None:
+            # 前回→現在→次
+            plt.plot([self.prev_x, current_pos['x'], next_pos['x']],
+                    [self.prev_y, current_pos['y'], next_pos['y']],
+                    'k--', alpha=0.6, linewidth=2.5, label='移動経路', zorder=3)
         else:
-            print("プロットするデータがありません")
-            
-        plt.plot(0, 0, 'ro', markersize=8)  # コウモリ位置（下中央）
+            # 現在→次
+            plt.plot([current_pos['x'], next_pos['x']],
+                    [current_pos['y'], next_pos['y']],
+                    'k--', alpha=0.6, linewidth=2.5, label='移動経路', zorder=3)
 
-        plt.xlim(-3, 3)
-        plt.ylim(-1, 3)
+        # グラフの設定
+        plt.legend(loc='upper right', fontsize=11, framealpha=0.9)
         plt.grid(True, alpha=0.3)
-        plt.gca().set_aspect('equal', adjustable='box')  # アスペクト比を1:1にして角度を正確に表示
+        plt.gca().set_aspect('equal', adjustable='box')
+        plt.xlabel('X [m]', fontsize=12)
+        plt.ylabel('Y [m]', fontsize=12)
+        plt.title(f'Step {self.step_idx}: 事後分布と移動計画（全体表示）', fontsize=14, fontweight='bold')
 
-        # ファイル名の生成（ステップ番号を含む）
+        # 保存
         filename = f"{movie_dir}/posterior_step_{self.step_idx:04d}.png"
         plt.tight_layout()
         plt.savefig(filename, dpi=150, bbox_inches='tight')
         plt.close()
-        print(f"事後分布プロットを保存しました: {filename}")
-
-        return posterior_sel, X_sel, Y_sel
+        print(f"事後分布プロット（全体版）を保存: {filename}")
