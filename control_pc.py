@@ -490,6 +490,52 @@ class ControlPC:
 
         print(f"  [事後分布計算] {len(detections)}個の検出結果から事後分布を更新")
 
+        # ========================================
+        # 【2025年追加】検出なし時のダミー観測
+        # ========================================
+        """
+        物体を検出しなかった場合の処理
+
+        実装方式:
+          - ワールド範囲外の固定位置(5m, 5m)にダミー観測を配置
+          - ロボットの現在位置から(5m, 5m)への距離と角度を計算
+          - 既存のベイズ更新ロジックがそのまま動作
+          - 正規化により、ワールド範囲内の確率が相対的に減衰
+
+        パラメータ:
+          - config.use_dummy_detection: True/False
+          - config.dummy_detection_x: 5.0 (m)
+          - config.dummy_detection_y: 5.0 (m)
+        """
+        if len(detections) == 0 and config.use_dummy_detection:
+            import math
+
+            # ロボット位置から(5m, 5m)への距離と角度を計算
+            dx = config.dummy_detection_x - current_position['head_x']
+            dy = config.dummy_detection_y - current_position['head_y']
+
+            # 距離 (m -> mm)
+            distance_m = math.sqrt(dx**2 + dy**2)
+            distance_mm = distance_m * 1000.0
+
+            # 角度（パルス方向からの相対角度）
+            # atan2で絶対角度を計算し、パルス方向を引く
+            abs_angle_deg = math.atan2(dy, dx) * 180.0 / math.pi
+            relative_angle_deg = abs_angle_deg - current_position['pd']
+
+            # -180～180の範囲に正規化
+            while relative_angle_deg > 180:
+                relative_angle_deg -= 360
+            while relative_angle_deg < -180:
+                relative_angle_deg += 360
+
+            # ダミー観測を追加
+            detections = [{'distance': distance_mm, 'angle': relative_angle_deg}]
+            print(f"  [ダミー観測] ({config.dummy_detection_x}m, {config.dummy_detection_y}m)に配置: 距離={distance_mm:.1f}mm, 角度={relative_angle_deg:.1f}度")
+        # ========================================
+        # 【2025年追加ここまで】
+        # ========================================
+
         # detectionsからy_el, y_erを計算
         if len(detections) > 0:
             # 距離と角度を配列に変換
