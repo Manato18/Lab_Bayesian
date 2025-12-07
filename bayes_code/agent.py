@@ -58,7 +58,7 @@ class Agent:
 
         # エージェントの物理的な大きさを考慮した衝突判定用パラメータ
         self.agent_radius = 0.3  # エージェントの半径 [m]
-        self.collision_threshold = -50  # 衝突とみなす事後分布の閾値
+        self.collision_threshold = -50  # 衝突とみなす事後分布の閾値（初期値、動的に更新される）
 
         self.trials = sim["trials"]
         self.PositionX = sim["init_pos"][0]
@@ -220,14 +220,8 @@ class Agent:
                 distances = np.arange(0.10, 0.75, 0.05)
                 check_distances = [d for d in distances if d < 0.2]
 
-                # ステップ1: -21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
-                all_values = []
-                for angle in angles:
-                    for distance in check_distances:
-                        if distance in angle_results[angle]:
-                            value = angle_results[angle][distance]
-                            if value <= -21:  # -21以下のみを収集
-                                all_values.append(value)
+                # ステップ1: 環境内の全範囲から-21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
+                all_values = self.bayesian.PosteriorProb[self.bayesian.PosteriorProb <= -21].flatten()
 
                 # ステップ2: 上位5%の閾値を計算
                 if len(all_values) >= 5:  # 十分なデータがある場合
@@ -395,28 +389,22 @@ class Agent:
                 distances = np.arange(0.10, 0.75, 0.05)
                 check_distances = [d for d in distances if d < 0.2]
 
-                # ステップ1: -21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
-                all_values = []
-                for angle in angles:
-                    for distance in check_distances:
-                        if distance in angle_results[angle]:
-                            value = angle_results[angle][distance]
-                            if value <= -21:  # -21以下のみを収集
-                                all_values.append(value)
+                # ステップ1: 環境内の全範囲から-21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
+                all_values = self.bayesian.PosteriorProb[self.bayesian.PosteriorProb <= -21].flatten()
 
                 # ステップ2: 上位5%の閾値を計算
                 if len(all_values) >= 5:  # 十分なデータがある場合
                     danger_threshold = np.percentile(all_values, 95)
-                    print(f"  危険判定閾値（壁の外を除いた上位5%）: {danger_threshold:.2f}")
-                    print(f"  閾値計算に使用したデータ点数: {len(all_values)}")
+                    print(f"  危険判定閾値（環境全体の上位5%）: {danger_threshold:.2f}")
+                    print(f"  使用データ点数: {len(all_values)}")
                 else:
                     # データが少なすぎる場合はフォールバック
                     danger_threshold = -50
-                    print(f"  警告: 閾値計算に使用できるデータが{len(all_values)}点のみです")
-                    print(f"  フォールバック: 固定閾値{danger_threshold}を使用します")
+                    print(f"  警告: データが{len(all_values)}点のみ、固定閾値{danger_threshold}を使用")
 
-                # 可視化用に閾値を保存
+                # 可視化用と衝突判定用に閾値を保存
                 self.last_danger_threshold = danger_threshold
+                self.collision_threshold = danger_threshold  # 衝突判定閾値も更新
 
                 # ステップ3: 閾値以上の箇所を危険として認定（壁の外-20も含む）
                 dangerous_angles = []
@@ -604,28 +592,22 @@ class Agent:
         # 距離0.2m未満のデータをチェック（既存の計算結果を活用）
         check_distances = [d for d in distances if d < 0.2]  # 0.2m未満の距離のみ
 
-        # ステップ1: -21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
-        all_values = []
-        for angle in angles:
-            for distance in check_distances:
-                if distance in angle_results[angle]:
-                    value = angle_results[angle][distance]
-                    if value <= -21:  # -21以下のみを収集
-                        all_values.append(value)
+        # ステップ1: 環境内の全範囲から-21以下の値のみを収集して統計を計算（壁の外-20や未更新領域を除外）
+        all_values = self.bayesian.PosteriorProb[self.bayesian.PosteriorProb <= -21].flatten()
 
         # ステップ2: 上位5%の閾値を計算
         if len(all_values) >= 5:  # 十分なデータがある場合
             danger_threshold = np.percentile(all_values, 95)
-            print(f"危険判定閾値（壁の外を除いた上位5%）: {danger_threshold:.2f}")
-            print(f"閾値計算に使用したデータ点数: {len(all_values)}")
+            print(f"危険判定閾値（環境全体の上位5%）: {danger_threshold:.2f}")
+            print(f"使用データ点数: {len(all_values)}")
         else:
             # データが少なすぎる場合はフォールバック
             danger_threshold = -50
-            print(f"警告: 閾値計算に使用できるデータが{len(all_values)}点のみです")
-            print(f"フォールバック: 固定閾値{danger_threshold}を使用します")
+            print(f"警告: データが{len(all_values)}点のみ、固定閾値{danger_threshold}を使用")
 
-        # 可視化用に閾値を保存
+        # 可視化用と衝突判定用に閾値を保存
         self.last_danger_threshold = danger_threshold
+        self.collision_threshold = danger_threshold  # 衝突判定閾値も更新
 
         # ステップ3: 閾値以上の箇所を危険として認定（壁の外-20も含む）
         dangerous_angles = []
