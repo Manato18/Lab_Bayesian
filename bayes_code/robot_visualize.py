@@ -122,8 +122,9 @@ class BatVisualizer:
         # 壁のプロット
         wall = ax.plot(self.wall_x_draw, self.wall_y_draw, 'k-', linewidth=2, label="wall")[0]
 
-        # オブザベーションのプロット（あれば）
-        if obs_x is not None and obs_y is not None:
+        # オブザベーションのプロット（配列に対応、空配列の場合は何もプロットしない）
+        if obs_x is not None and obs_y is not None and len(obs_x) > 0:
+            # 複数の物体を検出した場合、全ての物体位置をプロット
             obs_now = ax.plot(obs_x, obs_y, 'm+', markersize=20, markeredgewidth=5, label=r"observation $y$")[0]
             return bat, pole, fd, pd, wall, obs_now
 

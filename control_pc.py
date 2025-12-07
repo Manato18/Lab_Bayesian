@@ -587,14 +587,19 @@ class ControlPC:
         
         # 観測点の座標を計算
         if len(detections) > 0:
-            # obs_x, obs_yはすでに計算済み（行286-290）
-            obs_x_mean = np.mean(obs_x) if obs_x.size > 0 else current_position['head_x']
-            obs_y_mean = np.mean(obs_y) if obs_y.size > 0 else current_position['head_y']
+            # obs_x, obs_yはすでに計算済み（全物体の座標配列）
+            # 1次元配列に変換（2D配列の場合）
+            if obs_x.ndim > 1:
+                obs_x_array = obs_x.flatten()
+                obs_y_array = obs_y.flatten()
+            else:
+                obs_x_array = obs_x
+                obs_y_array = obs_y
         else:
-            # 検出がない場合はhead位置を使用
-            obs_x_mean = current_position['head_x']
-            obs_y_mean = current_position['head_y']
-        
+            # 検出がない場合は空配列を返す（何もプロットしない）
+            obs_x_array = np.array([])
+            obs_y_array = np.array([])
+
         # 可視化に必要なデータを返す
         return {
             'data1': data1,
@@ -603,8 +608,8 @@ class ControlPC:
             'data4': data4,
             'y_el_vec': y_el_vec,
             'y_er_vec': y_er_vec,
-            'obs_x': obs_x_mean,
-            'obs_y': obs_y_mean
+            'obs_x': obs_x_array,
+            'obs_y': obs_y_array
         }
 
     def calculate_movement_command(self, step, current_position):
