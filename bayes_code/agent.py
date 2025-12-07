@@ -238,15 +238,18 @@ class Agent:
         self.collision_threshold = danger_threshold
 
         # 最初の8ステップは直線移動（回避なし）
+        candidate_angles = []  # 可視化用に初期化
         if step < 8:
             avoid_angle = 0.0
             flag = True
             print(f"  [移動指令計算] ステップ{step}: 直線移動モード（回避なし）")
         else:
-            # 回避角度を計算
+            # fd基準で分析するため、fd-pdのオフセットを計算
+            fd_offset = current_position['fd'] - current_position['pd']
+            # 回避角度を計算（fd基準）
             angle_results, avoid_angle, value, flag, candidate_angles = \
-                self._analyze_posterior_for_avoidance(X_sel, Y_sel, posterior_sel, danger_threshold)
-            print(f"  [移動指令計算] 回避角度: {avoid_angle:.1f}度, フラグ: {flag}")
+                self._analyze_posterior_for_avoidance(X_sel, Y_sel, posterior_sel, danger_threshold, fd_offset)
+            print(f"  [移動指令計算] 回避角度: {avoid_angle:.1f}度（fd基準）, フラグ: {flag}")
 
         # 通常時: 候補角度リストを順次チェック
         if step >= 8 and flag:
@@ -256,8 +259,10 @@ class Agent:
             for candidate_angle in candidate_angles:
                 # 回転座標系で移動後の位置を計算
                 # 回転座標系では：原点(0,0)=ロボット位置, Y軸=pd方向
-                # pdに対する回避後の相対角度を計算
-                relative_angle = (current_position['fd'] - current_position['pd']) - candidate_angle
+                # candidate_angleはfd基準、pd基準に変換する
+                # fd - candidate_angle = 新しいfd方向
+                # (fd - candidate_angle) - pd = pd基準での新しい方向
+                relative_angle = (current_position['fd'] - candidate_angle) - current_position['pd']
 
                 # 回転座標系での移動後の位置（移動距離0.07m）
                 new_x_rot = 0.07 * np.sin(np.deg2rad(relative_angle))
@@ -279,19 +284,19 @@ class Agent:
                 print("  警告: すべての候補角度で衝突の危険があります。緊急回避モードに切り替えます。")
                 flag = False
 
-                # 緊急回避角度を決定
-                angles = np.arange(-30, 30, 5)
+                # 緊急回避角度を決定（fd基準）
+                fd_relative_angles = np.arange(-30, 30, 5)
                 distances = np.arange(0.10, 0.75, 0.05)
                 check_distances = [d for d in distances if d < 0.2]
 
                 # 閾値以上の箇所を危険として認定（壁の外-20も含む）
                 dangerous_angles = []
-                for angle in angles:
+                for fd_angle in fd_relative_angles:
                     for distance in check_distances:
-                        if distance in angle_results[angle]:
-                            value_temp = angle_results[angle][distance]
+                        if distance in angle_results[fd_angle]:
+                            value_temp = angle_results[fd_angle][distance]
                             if value_temp >= danger_threshold:
-                                dangerous_angles.append(angle)
+                                dangerous_angles.append(fd_angle)
                                 break
 
                 # 共通メソッドで回避角度を決定
@@ -352,8 +357,8 @@ class Agent:
         print(f"  [移動指令計算] 完了: 回避={avoid_angle:.1f}度, 移動={move_distance:.1f}mm, 緊急回避={emergency_avoidance}")
         print(f"  [移動指令計算] 新位置: ({new_x:.3f}, {new_y:.3f}), fd={new_fd:.1f}度, pd={new_pd:.1f}度")
 
-        # 可視化: 現在位置と次の位置をプロット
-        self._plot_posterior_global(current_position, new_position, move_distance_m)
+        # 可視化: 現在位置と次の位置をプロット（候補角度も描画）
+        self._plot_posterior_global(current_position, new_position, move_distance_m, candidate_angles)
 
         # 現在位置を前回位置として保存（次のステップ用）
         self.prev_x = current_position['x']
@@ -363,51 +368,55 @@ class Agent:
 
         return command, new_position, emergency_avoidance
 
-    def _analyze_posterior_for_avoidance(self, X_sel, Y_sel, posterior_sel, danger_threshold):
+    def _analyze_posterior_for_avoidance(self, X_sel, Y_sel, posterior_sel, danger_threshold, fd_offset=0.0):
         """
-        回避のための事後分布分析
-        前方の左右30度までを5度ごとに、0.7mまでの値を0.05mごとに足して
+        回避のための事後分布分析（fd基準）
+        fdの方向を中心に左右30度までを5度ごとに、0.7mまでの値を0.05mごとに足して
         それぞれの角度での合計を表示する
 
         Args:
-            X_sel (np.ndarray): 事後分布のX座標（回転座標系）
-            Y_sel (np.ndarray): 事後分布のY座標（回転座標系）
+            X_sel (np.ndarray): 事後分布のX座標（回転座標系、pd基準）
+            Y_sel (np.ndarray): 事後分布のY座標（回転座標系、pd基準）
             posterior_sel (np.ndarray): 事後分布の値
             danger_threshold (float): 危険判定閾値
+            fd_offset (float): fd - pd の角度差（度数法）
 
         Returns:
             tuple: (angle_results, min_angle, min_value, flag, candidate_angles)
+                   角度はすべてfd基準で返される
         """
-        # 角度範囲の設定（左右30度、5度ごと）
-        angles = np.arange(-30, 30, 5)  # -30, -25, -20, ..., 25, 30
+        # fd基準での角度範囲（-30～+30度）
+        fd_relative_angles = np.arange(-30, 30, 5)  # -30, -25, -20, ..., 25, 30
+        # pd基準での角度に変換（座標系がpd基準なため）
+        angles = fd_relative_angles + fd_offset
         distances = np.arange(0.10, 0.75, 0.05)  # 0.10, 0.15, 0.20, ..., 0.70
         
-        # 結果を格納する辞書
+        # 結果を格納する辞書（fd基準の角度をキーにする）
         angle_results = {}
-        
+
         # 表形式で表示（横が距離、縦が角度）
-        print("事後分布値（対数確率）の表（横：距離[m]、縦：角度[度]）:")
-        
+        print("事後分布値（対数確率）の表（横：距離[m]、縦：角度[度、fd基準]）:")
+
         # ヘッダー行（距離）
-        header = "角度[度] |"
+        header = "fd角度[°]|"
         for distance in distances:
             header += f" {distance:5.1f} |"
         print(header)
-        
+
         # 区切り線
         separator = "---------|"
         for _ in distances:
             separator += "-------|"
         print(separator)
-        
+
         # 各角度の行
-        for angle in angles:
-            angle_rad = np.deg2rad(angle)
-            angle_results[angle] = {}
+        for fd_angle, pd_angle in zip(fd_relative_angles, angles):
+            angle_rad = np.deg2rad(pd_angle)  # pd基準の角度をラジアンに
+            angle_results[fd_angle] = {}  # fd基準の角度をキーにする
             cumulative_sum = 0.0
-            
-            # 角度の行を開始
-            row = f"{angle:7.0f} |"
+
+            # 角度の行を開始（fd基準で表示）
+            row = f"{fd_angle:7.0f} |"
             
             for distance in distances:
                 # 指定角度・距離の範囲内のデータを抽出
@@ -420,41 +429,41 @@ class Agent:
                     values_at_angle_dist = posterior_sel[combined_mask]
                     avg_value = np.mean(values_at_angle_dist)
                     cumulative_sum += avg_value
-                    angle_results[angle][distance] = avg_value
+                    angle_results[fd_angle][distance] = avg_value
                     row += f" {avg_value:5.2f} |"
                 else:
-                    angle_results[angle][distance] = 0.0
+                    angle_results[fd_angle][distance] = 0.0
                     row += f" {'N/A':>5} |"
-            
+
             # 行を表示
             print(row)
-            
+
             # 各角度での合計を保存
-            angle_results[angle]['total'] = cumulative_sum
+            angle_results[fd_angle]['total'] = cumulative_sum
         
         # 各角度での合計を表示
-        print("\n各角度での事後分布値の合計:")
-        print("角度[度] | 合計値（対数確率）")
+        print("\n各角度での事後分布値の合計（fd基準）:")
+        print("fd角度[°]| 合計値（対数確率）")
         print("---------|------------------")
-        for angle in angles:
-            total = angle_results[angle]['total']
-            print(f"{angle:7.0f} | {total:16.2f}")
-        
+        for fd_angle in fd_relative_angles:
+            total = angle_results[fd_angle]['total']
+            print(f"{fd_angle:7.0f} | {total:16.2f}")
+
         # 最も安全な角度（合計値が最も低い角度）を特定
-        # angles の中で一番最初にその最小値を持った a が min_angle に選ばれる。
-        min_angle = min(angles, key=lambda a: angle_results[a]['total'])
+        # fd_relative_angles の中で一番最初にその最小値を持った a が min_angle に選ばれる。
+        min_angle = min(fd_relative_angles, key=lambda a: angle_results[a]['total'])
         min_value = angle_results[min_angle]['total']
         # 最も危険な角度（合計値が最も高い角度）を特定
-        # angles の中で一番最初にその最大値を持った a が max_angle に選ばれる。
-        max_angle = max(angles, key=lambda a: angle_results[a]['total'])
+        # fd_relative_angles の中で一番最初にその最大値を持った a が max_angle に選ばれる。
+        max_angle = max(fd_relative_angles, key=lambda a: angle_results[a]['total'])
         max_value = angle_results[max_angle]['total']
-        print(f"\n最も危険な角度: {max_angle}度 (合計値: {max_value:.2f})")
-        print(f"最も安全な角度: {min_angle}度 (合計値: {min_value:.2f})")
+        print(f"\n最も危険な角度（fd基準）: {max_angle}度 (合計値: {max_value:.2f})")
+        print(f"最も安全な角度（fd基準）: {min_angle}度 (合計値: {min_value:.2f})")
         print("=" * 50)
         
         
         # 新しい回避機能：既存の計算結果を活用して角度-30度から30度の範囲で距離0.2m未満に閾値以上のものがあれば左右で数を数えて少ない方に回避する
-        print("\n=== 緊急回避判定 ===")
+        print("\n=== 緊急回避判定（fd基準） ===")
         print(f"使用する危険判定閾値: {danger_threshold:.2f}")
 
         # 距離0.2m未満のデータをチェック（既存の計算結果を活用）
@@ -462,17 +471,17 @@ class Agent:
 
         # 閾値以上の箇所を危険として認定（壁の外-20も含む）
         dangerous_angles = []
-        for angle in angles:
+        for fd_angle in fd_relative_angles:
             for distance in check_distances:
-                if distance in angle_results[angle]:
-                    value = angle_results[angle][distance]
+                if distance in angle_results[fd_angle]:
+                    value = angle_results[fd_angle][distance]
                     if value >= danger_threshold:
-                        dangerous_angles.append(angle)
-                        print(f"危険な角度を発見: {angle}度 (距離: {distance}m, 値: {value:.2f})")
+                        dangerous_angles.append(fd_angle)
+                        print(f"危険な角度を発見（fd基準）: {fd_angle}度 (距離: {distance}m, 値: {value:.2f})")
 
         if dangerous_angles:
-            # 通常時の候補角度リストを作成（安全な順にソート）
-            sorted_angles = sorted(angles, key=lambda a: angle_results[a]['total'])
+            # 通常時の候補角度リストを作成（安全な順にソート、fd基準）
+            sorted_angles = sorted(fd_relative_angles, key=lambda a: angle_results[a]['total'])
 
             # 共通メソッドで回避角度を決定
             avoidance_angle = self._decide_emergency_avoidance_angle(dangerous_angles, sorted_angles)
@@ -484,8 +493,8 @@ class Agent:
         print("危険な角度は見つかりませんでした。従来の回避方法を使用します。")
         print("=" * 50)
 
-        # 通常時の候補角度リストを作成（安全な順にソート）
-        sorted_angles = sorted(angles, key=lambda a: angle_results[a]['total'])
+        # 通常時の候補角度リストを作成（安全な順にソート、fd基準）
+        sorted_angles = sorted(fd_relative_angles, key=lambda a: angle_results[a]['total'])
 
         return angle_results, min_angle, min_value, True, sorted_angles
 
@@ -547,17 +556,19 @@ class Agent:
 
         return posterior_sel, X_sel, Y_sel
 
-    def _plot_posterior_global(self, current_pos, next_pos, move_distance_m):
+    def _plot_posterior_global(self, current_pos, next_pos, move_distance_m, candidate_angles=[]):
         """
         事後分布を全体表示（回転なし、ワールド座標系）で可視化
 
         前回位置→現在位置→次の位置（回避角度分回転+移動距離分直進）を
         頭部方向（矢印）と放射方向（線）付きで表示する
+        また、全候補角度のロボット位置を円で描画（デバッグ用）
 
         Args:
             current_pos (dict): 現在位置 {'x', 'y', 'fd', 'pd'}
             next_pos (dict): 次の位置（回避後） {'x', 'y', 'fd', 'pd'}
-            move_distance_m (float): 実際の移動距離 [m]（現在は未使用）
+            move_distance_m (float): 実際の移動距離 [m]
+            candidate_angles (list): 候補角度リスト（fd基準、度数法）
         """
         # 事後分布データ取得
         posterior_data = self.bayesian.Px_yn_conf_log_current
@@ -579,6 +590,28 @@ class Agent:
             plt.scatter(self.world.pole_x, self.world.pole_y,
                        c='red', marker='x', s=100, linewidths=3,
                        label='Obstacles', zorder=5)
+
+        # 全候補角度のロボット位置を円で描画（デバッグ用）
+        if len(candidate_angles) > 0:
+            from matplotlib.patches import Circle
+            for i, cand_angle in enumerate(candidate_angles):
+                # fd基準の角度から移動先を計算（ワールド座標系）
+                new_fd_cand = self.normalize_angle_deg(current_pos['fd'] - cand_angle)
+                cand_x = current_pos['x'] + move_distance_m * np.cos(np.deg2rad(new_fd_cand))
+                cand_y = current_pos['y'] + move_distance_m * np.sin(np.deg2rad(new_fd_cand))
+
+                # ロボットの大きさで円を描画
+                circle = Circle((cand_x, cand_y), self.agent_radius,
+                               fill=False, edgecolor='orange', linewidth=1,
+                               linestyle='--', alpha=0.6, zorder=3)
+                plt.gca().add_patch(circle)
+
+                # 最初の候補のみラベルを付ける（凡例の重複を避ける）
+                if i == 0:
+                    plt.plot([], [], color='orange', linestyle='--', linewidth=1,
+                            label=f'Candidate Positions (r={self.agent_radius}m)')
+
+            print(f"  [Visualization] {len(candidate_angles)} candidate circles plotted")
 
         # 危険領域をグレーの散布図でプロット
         if self.last_danger_threshold is not None:
