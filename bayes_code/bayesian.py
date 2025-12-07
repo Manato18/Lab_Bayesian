@@ -1,5 +1,7 @@
 import numpy as np
 import copy
+import csv
+import os
 
 # 設定ファイルから必要なパラメータをインポート
 from bayes_code.config import x_max, y_max, margin_space, h, world_wall_pos
@@ -33,6 +35,9 @@ class Bayesian:
         self.Px_yn_conf_log_current = None
         # 認知収束度合いの履歴を保存する配列
         self.convergence_history = []
+        # 認知収束度合いのCSVファイルパス
+        self.convergence_csv_path = None
+        self.convergence_step = 0
 
     def Init(self, world, agent):
 
@@ -155,7 +160,35 @@ class Bayesian:
         except Exception as e:
             print(f"エラーが発生しました: {e}")
             return -1000  # エラー時のデフォルト値
-    
+
+    def init_convergence_csv(self, folder_name, pattern):
+        """
+        認知収束度合いのCSVファイルを初期化する
+
+        Args:
+            folder_name: 出力先のフォルダ名
+            pattern: パターン名（ファイル名に使用）
+        """
+        # 出力ディレクトリの作成
+        csv_output_dir = os.path.join(folder_name, "output", pattern)
+        os.makedirs(csv_output_dir, exist_ok=True)
+
+        # CSVファイルパスの設定
+        self.convergence_csv_path = os.path.join(csv_output_dir, f"cognitive_convergence_{pattern}.csv")
+
+        # CSVファイルの作成とヘッダーの書き込み
+        try:
+            with open(self.convergence_csv_path, 'w', newline='') as csvfile:
+                csv_writer = csv.writer(csvfile)
+                csv_writer.writerow(['Step', 'Convergence_Value'])
+            print(f"認知収束度合いのCSVファイル初期化完了: {self.convergence_csv_path}")
+            self.convergence_step = 0
+            return True
+        except Exception as e:
+            print(f"CSVファイル初期化に失敗しました: {e}")
+            self.convergence_csv_path = None
+            return False
+
     def new_likelyhood_2D(self, tau_n, d, sigma2):
         """
         2次元空間上の尗度（尤度、likelihood）計算関数
@@ -254,10 +287,6 @@ class Bayesian:
         self.Px3R_log = copy.deepcopy(self.Px_ynR_conf_log_current)
         
         self.Px_yn_conf_log_current = self.Px_ynL_conf_log_current + self.Px_ynR_conf_log_current
-        
-        # 認知収束度合いを計算
-        convergence_value = self.calculate_convergence()
-        self.convergence_history.append(convergence_value)
 
         # world_wall_posはconfig.pyから読み込まれます
         if world_wall_pos:
@@ -286,7 +315,20 @@ class Bayesian:
             # 2. y < 2.0 または y > 6.5 の領域
             self.Px_yn_conf_log_current[:, :min_idx] = -20  # y < 2.0
             self.Px_yn_conf_log_current[:, max_idx+1:] = -20  # y > 6.5
-        
+
+        # 認知収束度合いを計算してCSVに保存
+        convergence_value = self.calculate_convergence()
+        self.convergence_history.append(convergence_value)
+
+        if self.convergence_csv_path is not None:
+            try:
+                with open(self.convergence_csv_path, 'a', newline='') as csvfile:
+                    csv_writer = csv.writer(csvfile)
+                    csv_writer.writerow([step_idx, convergence_value])
+                self.convergence_step += 1
+            except Exception as e:
+                print(f"CSV書き込みエラー: {e}")
+
         data1 = self.Pyn_x_L_current
         data2 = current_confidence_matrix[0]
         data3 = self.Px_yn_log_current

@@ -18,6 +18,7 @@ import json
 import numpy as np
 import os
 import base64
+import csv
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from bayes_code import config
@@ -164,6 +165,12 @@ class ControlPC:
         print("Bayesian事後分布初期化中...")
         self.bayesian.Init(self.world, self.agent)
         print("✓ Bayesian事後分布初期化完了")
+
+        # 認知収束度合いのCSVファイルを初期化
+        print("認知収束度合いCSV初期化中...")
+        pattern = "real_robot"  # 実機ロボット用のパターン名
+        self.bayesian.init_convergence_csv(config.folder_name, pattern)
+        print("✓ 認知収束度合いCSV初期化完了")
 
         # ファイル保存先ディレクトリの作成
         self.save_dir = os.path.join(config.folder_name, "output", "robot_data")
@@ -830,6 +837,12 @@ class ControlPC:
             # 新しい位置を内部管理
             self.update_current_position(new_position)
 
+            # 位置情報をCSVに保存
+            with open(self.agent.csv_filename, 'a', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow([step, new_position['x'], new_position['y'], new_position['fd'], command['pulse_direction']])
+            print(f"  [CSV保存] position_data.csv に位置情報を保存しました")
+
             # 現在の状態を可視化
             self.plot_current_state(step, current_position, posterior_data, emergency_avoidance)
 
@@ -942,6 +955,12 @@ class ControlPC:
 
             # 新しい位置を内部管理（env_serverへの更新は不要）
             self.update_current_position(new_position)
+
+            # 位置情報をCSVに保存
+            with open(self.agent.csv_filename, 'a', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow([step, new_position['x'], new_position['y'], new_position['fd'], command['pulse_direction']])
+            print(f"  [CSV保存] position_data.csv に位置情報を保存しました")
 
             # 現在の状態を可視化
             self.plot_current_state(step, current_position, posterior_data, emergency_avoidance)
