@@ -229,11 +229,13 @@ class Agent:
                         self.consecutive_avoidance_count += 1
                     else:
                         if left_count <= right_count:
-                            avoid_angle = 60
-                            print(f"左側が少ないため、右側（{avoid_angle}度）に回避")
-                        else:
+                            # 左側の危険が少ない（左側が安全）→ 左側に回避
                             avoid_angle = -60
-                            print(f"右側が少ないため、左側（{avoid_angle}度）に回避")
+                            print(f"左側の危険が少ない（左側が安全）ため、左側（{avoid_angle}度）に回避")
+                        else:
+                            # 右側の危険が少ない（右側が安全）→ 右側に回避
+                            avoid_angle = 60
+                            print(f"右側の危険が少ない（右側が安全）ため、右側（{avoid_angle}度）に回避")
                         self.consecutive_avoidance_count = 1
 
                     self.last_avoidance_direction = avoid_angle
@@ -365,11 +367,13 @@ class Agent:
                         self.consecutive_avoidance_count += 1
                     else:
                         if left_count <= right_count:
-                            avoid_angle = 60
-                            print(f"  左側が少ないため、右側（{avoid_angle}度）に回避")
-                        else:
+                            # 左側の危険が少ない（左側が安全）→ 左側に回避
                             avoid_angle = -60
-                            print(f"  右側が少ないため、左側（{avoid_angle}度）に回避")
+                            print(f"  左側の危険が少ない（左側が安全）ため、左側（{avoid_angle}度）に回避")
+                        else:
+                            # 右側の危険が少ない（右側が安全）→ 右側に回避
+                            avoid_angle = 60
+                            print(f"  右側の危険が少ない（右側が安全）ため、右側（{avoid_angle}度）に回避")
                         self.consecutive_avoidance_count = 1
 
                     self.last_avoidance_direction = avoid_angle
@@ -502,11 +506,11 @@ class Agent:
             print(f"{angle:7.0f} | {total:16.2f}")
         
         # 最も安全な角度（合計値が最も低い角度）を特定
-        # angles の中で一番最初にその最大値を持った a が min_angle に選ばれる。
+        # angles の中で一番最初にその最小値を持った a が min_angle に選ばれる。
         min_angle = min(angles, key=lambda a: angle_results[a]['total'])
         min_value = angle_results[min_angle]['total']
         # 最も危険な角度（合計値が最も高い角度）を特定
-        # angles の中で一番最初にその最小値を持った a が max_angle に選ばれる。
+        # angles の中で一番最初にその最大値を持った a が max_angle に選ばれる。
         max_angle = max(angles, key=lambda a: angle_results[a]['total'])
         max_value = angle_results[max_angle]['total']
         print(f"\n最も危険な角度: {max_angle}度 (合計値: {max_value:.2f})")
