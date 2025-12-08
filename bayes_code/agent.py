@@ -308,7 +308,6 @@ class Agent:
 
         # 新しい方向を計算
         new_fd = self.normalize_angle_deg(current_position['fd'] - avoid_angle)
-        new_pd = self.normalize_angle_deg(current_position['pd'] - avoid_angle)
 
         # パルス放射方向の計算（回避後の方向 new_fd を基準にする）
         if step < 8:
