@@ -45,6 +45,8 @@ class Agent:
         # 前回の位置を保存（可視化用）
         self.prev_x = None
         self.prev_y = None
+        self.prev_head_x = None
+        self.prev_head_y = None
         self.prev_fd = None
         self.prev_pd = None
 
@@ -308,14 +310,15 @@ class Agent:
         new_fd = self.normalize_angle_deg(current_position['fd'] - avoid_angle)
         new_pd = self.normalize_angle_deg(current_position['pd'] - avoid_angle)
 
-        # パルス放射方向の計算
+        # パルス放射方向の計算（回避後の方向 new_fd を基準にする）
         if step < 8:
-            # 最初の8ステップは進行方向より30度左
-            new_pd = self.normalize_angle_deg(current_position['fd'] - 30.0)
-            print(f"  [移動指令計算] ステップ{step}: パルス放射方向を左30度固定 (fd={current_position['fd']:.1f}° → pd={new_pd:.1f}°)")
+            # 最初の8ステップは回避後の進行方向より30度左（固定）
+            new_pd = self.normalize_angle_deg(new_fd - 30.0)
+            print(f"  [移動指令計算] ステップ{step}: パルス放射方向を回避後の方向から左30度固定 (new_fd={new_fd:.1f}° → pd={new_pd:.1f}°)")
         else:
-            # ステップ8以降は回避角度の1.5倍で調整
-            new_pd = self.normalize_angle_deg(current_position['fd'] + (avoid_angle * 1.5))
+            # ステップ8以降は回避後の進行方向を基準に、回避角度の半分だけ放射方向をずらす
+            new_pd = self.normalize_angle_deg(new_fd + (avoid_angle * 0.5))
+            print(f"  [移動指令計算] ステップ{step}: パルス放射方向を回避後の方向から {avoid_angle * 0.5:.1f}度調整 (new_fd={new_fd:.1f}°, avoid_angle={avoid_angle:.1f}° → pd={new_pd:.1f}°)")
 
         # 緊急回避時は飛行方向と放射方向を一致させる
         if not flag:
@@ -327,23 +330,32 @@ class Agent:
             move_distance = 70.0  # mm (通常移動: 0.07m)
         else:
             move_distance = 30.0  # mm (緊急回避: 0.03m)
-        
+
         # 新しい位置を計算
         move_distance_m = move_distance / 1000.0  # mm -> m
+
+        # body位置の計算（回転軸として扱う）
         new_x = current_position['x'] + move_distance_m * np.cos(np.deg2rad(new_fd))
         new_y = current_position['y'] + move_distance_m * np.sin(np.deg2rad(new_fd))
-        
+
+        # head位置も同じ移動ベクトルで計算（bodyとheadは一緒に移動する）
+        new_head_x = current_position['head_x'] + move_distance_m * np.cos(np.deg2rad(new_fd))
+        new_head_y = current_position['head_y'] + move_distance_m * np.sin(np.deg2rad(new_fd))
+
         # 移動指令
         command = {
             'avoidance_direction': float(avoid_angle),
             'move_distance': float(move_distance),
             'pulse_direction': float(new_pd)
         }
-        
-        # 新しい位置
+
+        # 新しい位置（head情報を含む）
         new_position = {
             'x': float(new_x),
             'y': float(new_y),
+            'head_x': float(new_head_x),
+            'head_y': float(new_head_y),
+            'head_z': float(current_position.get('head_z', 0.0)),
             'fd': float(new_fd),
             'pd': float(new_pd)
         }
@@ -352,14 +364,17 @@ class Agent:
         emergency_avoidance = not flag
 
         print(f"  [移動指令計算] 完了: 回避={avoid_angle:.1f}度, 移動={move_distance:.1f}mm, 緊急回避={emergency_avoidance}")
-        print(f"  [移動指令計算] 新位置: ({new_x:.3f}, {new_y:.3f}), fd={new_fd:.1f}度, pd={new_pd:.1f}度")
+        print(f"  [移動指令計算] 新body位置: ({new_x:.3f}, {new_y:.3f}), 新head位置: ({new_head_x:.3f}, {new_head_y:.3f})")
+        print(f"  [移動指令計算] 新方向: fd={new_fd:.1f}度, pd={new_pd:.1f}度")
 
         # 可視化: 現在位置と次の位置をプロット（候補角度も描画）
         self._plot_posterior_global(current_position, new_position, move_distance_m, candidate_angles)
 
-        # 現在位置を前回位置として保存（次のステップ用）
+        # 現在位置を前回位置として保存（次のステップ用、head情報も保存）
         self.prev_x = current_position['x']
         self.prev_y = current_position['y']
+        self.prev_head_x = current_position.get('head_x', current_position['x'])
+        self.prev_head_y = current_position.get('head_y', current_position['y'])
         self.prev_fd = current_position['fd']
         self.prev_pd = current_position['pd']
 
@@ -562,11 +577,16 @@ class Agent:
         また、全候補角度のロボット位置を円で描画（デバッグ用）
 
         Args:
-            current_pos (dict): 現在位置 {'x', 'y', 'fd', 'pd'}
-            next_pos (dict): 次の位置（回避後） {'x', 'y', 'fd', 'pd'}
+            current_pos (dict): 現在位置 {'x', 'y', 'fd', 'pd', 'head_x', 'head_y'}
+            next_pos (dict): 次の位置（回避後） {'x', 'y', 'fd', 'pd', 'head_x', 'head_y'}
             move_distance_m (float): 実際の移動距離 [m]
             candidate_angles (list): 候補角度リスト（fd基準、度数法）
         """
+        # ロボットの半径を計算（bodyとheadの距離）
+        robot_radius = np.sqrt((current_pos['x'] - current_pos['head_x'])**2 +
+                              (current_pos['y'] - current_pos['head_y'])**2)
+        print(f"  [Visualization] ロボット半径（body-head距離）: {robot_radius:.3f}m")
+
         # 事後分布データ取得
         posterior_data = self.bayesian.Px_yn_conf_log_current
 
@@ -597,8 +617,8 @@ class Agent:
             test_x = current_pos['x'] + move_distance_m * np.cos(np.deg2rad(new_fd_test))
             test_y = current_pos['y'] + move_distance_m * np.sin(np.deg2rad(new_fd_test))
 
-            # 衝突チェック範囲を青色の円で描画
-            circle = Circle((test_x, test_y), self.agent_radius,
+            # 衝突チェック範囲を青色の円で描画（body中心、robot_radius使用）
+            circle = Circle((test_x, test_y), robot_radius,
                            fill=False, edgecolor='blue', linewidth=2,
                            linestyle='-', alpha=0.8, zorder=6)
             plt.gca().add_patch(circle)
@@ -606,31 +626,9 @@ class Agent:
             # ラベルを追加（最初の円のみ）
             if i == 0:
                 plt.plot([], [], color='blue', linestyle='-', linewidth=2,
-                        label=f'Collision Check Area (r={self.agent_radius}m)')
+                        label=f'Collision Check Area (r={robot_radius:.3f}m)')
 
         print(f"  [Visualization] {len(test_angles)} collision check circles plotted at angles: {test_angles}")
-
-        # 全候補角度のロボット位置を円で描画（デバッグ用）
-        if len(candidate_angles) > 0:
-            from matplotlib.patches import Circle
-            for i, cand_angle in enumerate(candidate_angles):
-                # fd基準の角度から移動先を計算（ワールド座標系）
-                new_fd_cand = self.normalize_angle_deg(current_pos['fd'] - cand_angle)
-                cand_x = current_pos['x'] + move_distance_m * np.cos(np.deg2rad(new_fd_cand))
-                cand_y = current_pos['y'] + move_distance_m * np.sin(np.deg2rad(new_fd_cand))
-
-                # ロボットの大きさで円を描画
-                circle = Circle((cand_x, cand_y), self.agent_radius,
-                               fill=False, edgecolor='orange', linewidth=1,
-                               linestyle='--', alpha=0.6, zorder=3)
-                plt.gca().add_patch(circle)
-
-                # 最初の候補のみラベルを付ける（凡例の重複を避ける）
-                if i == 0:
-                    plt.plot([], [], color='orange', linestyle='--', linewidth=1,
-                            label=f'Candidate Positions (r={self.agent_radius}m)')
-
-            print(f"  [Visualization] {len(candidate_angles)} candidate circles plotted")
 
         # 危険領域をグレーの散布図でプロット
         if self.last_danger_threshold is not None:
@@ -652,8 +650,13 @@ class Agent:
         # 前回位置（もしあれば）- 薄めの水色
         if self.prev_x is not None:
             color_prev = 'lightblue'
-            plt.plot(self.prev_x, self.prev_y, 'o', color=color_prev,
-                    markersize=12, label='Previous Position', zorder=4)
+
+            # body中心の円を描画
+            circle_prev = Circle((self.prev_x, self.prev_y), robot_radius,
+                                fill=False, edgecolor=color_prev, linewidth=2,
+                                linestyle='-', alpha=0.6, zorder=3,
+                                label='Previous Position')
+            plt.gca().add_patch(circle_prev)
 
             # 前回の頭部方向（fd）：矢印
             dx_fd = arrow_len * np.cos(np.deg2rad(self.prev_fd))
@@ -673,8 +676,13 @@ class Agent:
 
         # 現在位置 - 赤色
         color_current = 'red'
-        plt.plot(current_pos['x'], current_pos['y'], 'o', color=color_current,
-                markersize=14, label='Current Position', zorder=4)
+
+        # body中心の円を描画
+        circle_current = Circle((current_pos['x'], current_pos['y']), robot_radius,
+                               fill=False, edgecolor=color_current, linewidth=2,
+                               linestyle='-', alpha=0.6, zorder=3,
+                               label='Current Position')
+        plt.gca().add_patch(circle_current)
 
         # 現在の頭部方向（fd）：矢印
         dx_fd = arrow_len * np.cos(np.deg2rad(current_pos['fd']))
@@ -694,8 +702,13 @@ class Agent:
 
         # 次の位置（回避角度分回転+移動距離分直進）- 薄めの緑色
         color_next = 'lightgreen'
-        plt.plot(next_pos['x'], next_pos['y'], 'o', color=color_next,
-                markersize=12, label='Next Position (After Avoidance)', zorder=4)
+
+        # body中心の円を描画
+        circle_next = Circle((next_pos['x'], next_pos['y']), robot_radius,
+                            fill=False, edgecolor=color_next, linewidth=2,
+                            linestyle='-', alpha=0.6, zorder=3,
+                            label='Next Position (After Avoidance)')
+        plt.gca().add_patch(circle_next)
 
         # 次の頭部方向（fd）：矢印
         dx_fd = arrow_len * np.cos(np.deg2rad(next_pos['fd']))
