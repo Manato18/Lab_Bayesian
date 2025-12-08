@@ -165,7 +165,7 @@ class Agent:
         指定位置にエージェントが移動した場合の衝突チェック（回転座標系）
         エージェントの半径を考慮し、移動先を中心とした範囲内の事後分布値を確認
 
-        重要: すべての座標は回転座標系（原点=ロボット位置、Y軸=pd方向）で指定すること
+        重要: すべての座標は回転座標系（原点=ロボット位置、Y軸=fd方向）で指定すること
 
         Args:
             new_x (float): 移動後のx座標（回転座標系）
@@ -204,7 +204,8 @@ class Agent:
         control_pc.pyとagent.pyで重複していたロジックを統合しました。
 
         Args:
-            current_position (dict): 現在位置 {'x': float, 'y': float, 'fd': float, 'pd': float}
+            current_position (dict): 現在位置 {'x': float, 'y': float, 'fd': float, 'pd': float,
+                                               'head_x': float, 'head_y': float, 'head_z': float}
             step (int): ステップ番号
 
         Returns:
@@ -212,10 +213,10 @@ class Agent:
                 - command (dict): 移動指令 {'avoidance_direction', 'move_distance', 'pulse_direction'}
                 - new_position (dict): 新しい位置 {'x', 'y', 'fd', 'pd'}
         """
-        # 回避計算用: 前方2m範囲の事後分布データを取得
+        # 回避計算用: 前方2m範囲の事後分布データを取得（head位置から）
         posterior_sel, X_sel, Y_sel = self._get_forward_posterior_data(
-            posx=current_position['x'],
-            posy=current_position['y'],
+            posx=current_position['head_x'],
+            posy=current_position['head_y'],
             pd=current_position['pd'],
             fd=current_position['fd']
         )
@@ -244,11 +245,9 @@ class Agent:
             flag = True
             print(f"  [移動指令計算] ステップ{step}: 直線移動モード（回避なし）")
         else:
-            # fd基準で分析するため、pd-fdのオフセットを計算（回転座標系での角度）
-            fd_offset = current_position['pd'] - current_position['fd']
-            # 回避角度を計算（fd基準）
+            # 回避角度を計算（fd基準、座標系もfd基準なので変換不要）
             angle_results, avoid_angle, value, flag, candidate_angles = \
-                self._analyze_posterior_for_avoidance(X_sel, Y_sel, posterior_sel, danger_threshold, fd_offset)
+                self._analyze_posterior_for_avoidance(X_sel, Y_sel, posterior_sel, danger_threshold)
             print(f"  [移動指令計算] 回避角度: {avoid_angle:.1f}度（fd基準）, フラグ: {flag}")
 
         # 通常時: 候補角度リストを順次チェック
@@ -258,12 +257,9 @@ class Agent:
 
             for candidate_angle in candidate_angles:
                 # 回転座標系で移動後の位置を計算
-                # 回転座標系では：原点(0,0)=ロボット位置, Y軸=pd方向
-                # candidate_angleはfd基準、pd基準に変換する
-                # fd - candidate_angle = 新しいfd方向
-                # pd - (新しいfd方向) = pd基準での新しい方向
-                # = pd - fd + candidate_angle = fd_offset + candidate_angle
-                relative_angle = fd_offset + candidate_angle
+                # 回転座標系では：原点(0,0)=ロボット位置, Y軸=fd方向
+                # candidate_angleはfd基準なので、そのまま使用可能
+                relative_angle = candidate_angle
 
                 # 回転座標系での移動後の位置（移動距離0.07m）
                 new_x_rot = 0.07 * np.sin(np.deg2rad(relative_angle))
@@ -376,11 +372,11 @@ class Agent:
         それぞれの角度での合計を表示する
 
         Args:
-            X_sel (np.ndarray): 事後分布のX座標（回転座標系、pd基準）
-            Y_sel (np.ndarray): 事後分布のY座標（回転座標系、pd基準）
+            X_sel (np.ndarray): 事後分布のX座標（回転座標系、fd基準）
+            Y_sel (np.ndarray): 事後分布のY座標（回転座標系、fd基準）
             posterior_sel (np.ndarray): 事後分布の値
             danger_threshold (float): 危険判定閾値
-            fd_offset (float): fd - pd の角度差（度数法）
+            fd_offset (float): 予備パラメータ（現在は使用されず、常に0.0）
 
         Returns:
             tuple: (angle_results, min_angle, min_value, flag, candidate_angles)
@@ -388,7 +384,7 @@ class Agent:
         """
         # fd基準での角度範囲（-30～+30度）
         fd_relative_angles = np.arange(-30, 30, 5)  # -30, -25, -20, ..., 25, 30
-        # pd基準での角度に変換（座標系がpd基準なため）
+        # 座標系もfd基準なので変換は不要
         angles = fd_relative_angles + fd_offset
         distances = np.arange(0.10, 0.75, 0.05)  # 0.10, 0.15, 0.20, ..., 0.70
         
@@ -411,8 +407,8 @@ class Agent:
         print(separator)
 
         # 各角度の行
-        for fd_angle, pd_angle in zip(fd_relative_angles, angles):
-            angle_rad = np.deg2rad(pd_angle)  # pd基準の角度をラジアンに
+        for fd_angle, angle in zip(fd_relative_angles, angles):
+            angle_rad = np.deg2rad(angle)  # fd基準の角度をラジアンに
             angle_results[fd_angle] = {}  # fd基準の角度をキーにする
             cumulative_sum = 0.0
 
@@ -503,7 +499,7 @@ class Agent:
         """
         回避計算用: ロボット前方2m範囲の事後分布データを取得
 
-        ロボットの位置と頭部方向pdを使い、前方2m範囲の事後分布データを
+        ロボットの位置と頭部方向fdを使い、前方2m範囲の事後分布データを
         ロボット中心の回転座標系で取得する（可視化はしない）
 
         Args:
@@ -535,7 +531,7 @@ class Agent:
         # ロボット位置・頭部方向
         bat_x = posx
         bat_y = posy
-        bat_angle_deg = pd  # 度数法
+        bat_angle_deg = fd  # 度数法（頭部方向を使用）
 
         # 度数法をラジアンに変換し、ロボットが上向きになるように回転
         bat_angle_rad = np.deg2rad(-bat_angle_deg+90)  # 90度引いて上向きに調整
