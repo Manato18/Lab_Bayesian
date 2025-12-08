@@ -47,21 +47,23 @@ class BatVisualizer:
     def create_figure(self):
         """基本的な図の作成"""
         if self.show_echo_plots:
-            fig = plt.figure(figsize=(36, 18), constrained_layout=False)
-            # サブプロットの作成
-            ax_y = fig.add_subplot(3, 4, (1, 5))   # 実topview データ
-            ax_y2 = fig.add_subplot(3, 4, (2, 6))  # 実topview データ
-            ax_y3 = fig.add_subplot(3, 4, (3, 7))  # 実topview データ
-            ax_y4 = fig.add_subplot(3, 4, (4, 8))  # 実topview データ
+            fig = plt.figure(figsize=(45, 18), constrained_layout=False)
+            # サブプロットの作成（5列グリッドに変更）
+            ax_y = fig.add_subplot(3, 5, (1, 6))   # 実topview データ
+            ax_y2 = fig.add_subplot(3, 5, (2, 7))  # 実topview データ
+            ax_y3 = fig.add_subplot(3, 5, (3, 8))  # 実topview データ
+            ax_y4 = fig.add_subplot(3, 5, (4, 9))  # 実topview データ
+            ax_histogram = fig.add_subplot(3, 5, (5, 10))  # 角度評価ヒストグラム
             ax_py_xL = fig.add_subplot(615)        # エコーデータL
             ax_py_xR = fig.add_subplot(616)        # エコーデータR
         else:
-            fig = plt.figure(figsize=(36, 12), constrained_layout=False)
+            fig = plt.figure(figsize=(45, 12), constrained_layout=False)
             # エコープロットなしの場合は上部のプロットのみ作成
-            ax_y = fig.add_subplot(1, 4, 1)   # 実topview データ
-            ax_y2 = fig.add_subplot(1, 4, 2)  # 実topview データ
-            ax_y3 = fig.add_subplot(1, 4, 3)  # 実topview データ
-            ax_y4 = fig.add_subplot(1, 4, 4)  # 実topview データ
+            ax_y = fig.add_subplot(1, 5, 1)   # 実topview データ
+            ax_y2 = fig.add_subplot(1, 5, 2)  # 実topview データ
+            ax_y3 = fig.add_subplot(1, 5, 3)  # 実topview データ
+            ax_y4 = fig.add_subplot(1, 5, 4)  # 実topview データ
+            ax_histogram = fig.add_subplot(1, 5, 5)  # 角度評価ヒストグラム
             ax_py_xL = None
             ax_py_xR = None
 
@@ -72,8 +74,9 @@ class BatVisualizer:
         ax_y2.set_title("confidence_matrix")
         ax_y3.set_title("posterior(without mmemory)")
         ax_y4.set_title("posterior(with mmemory)")
+        ax_histogram.set_title("Avoidance Angle Evaluation")
 
-        return fig, (ax_y, ax_y2, ax_y3, ax_y4, ax_py_xL, ax_py_xR)
+        return fig, (ax_y, ax_y2, ax_y3, ax_y4, ax_histogram, ax_py_xL, ax_py_xR)
 
     def setup_colormap(self, ax, data, cmap="GnBu"):
         """カラーマップの設定"""
@@ -210,14 +213,15 @@ class BatVisualizer:
         return f"{output_dir}/frame_{frame_idx:04d}.png"
 
 
-    def plot_single_step(self, step_idx, 
+    def plot_single_step(self, step_idx,
                         bat_x, bat_y, fd, pd,
-                        pole_x, pole_y, 
+                        pole_x, pole_y,
                         obs_x, obs_y,
                         data1, data2, data3, data4,
                         t_ax, y_el_vec, y_er_vec,
                         output_dir,
-                        emergency_avoidance=False):
+                        emergency_avoidance=False,
+                        angle_evaluation=None):
         """
         単一ステップのプロットと保存（履歴配列不要、過去の観測点なし）
         
@@ -260,9 +264,9 @@ class BatVisualizer:
         
         # 緊急回避時はロボットの色を黄色に変更
         bat_color = 'y' if emergency_avoidance else 'k'
-        
+
         # 図の作成
-        fig, (ax_y, ax_y2, ax_y3, ax_y4, ax_py_xL, ax_py_xR) = self.create_figure()
+        fig, (ax_y, ax_y2, ax_y3, ax_y4, ax_histogram, ax_py_xL, ax_py_xR) = self.create_figure()
         
         # データプロット
         pcm1, c_min1, c_max1 = self.setup_colormap(ax_y, data1)
@@ -326,11 +330,45 @@ class BatVisualizer:
         
         # ステップ番号表示
         ax_y.text(0.1, 0.8, f"sensing_n = {step_idx}", transform=ax_y.transAxes)
-        
+
+        # 角度評価ヒストグラムのプロット
+        if angle_evaluation is not None and angle_evaluation['angle_results'] is not None:
+            angle_results = angle_evaluation['angle_results']
+            selected_angle = angle_evaluation['selected_angle']
+
+            # 角度と合計値のリストを作成
+            angles = sorted(angle_results.keys())
+            totals = [angle_results[angle]['total'] for angle in angles]
+
+            # 色の設定（選択された角度は緑、それ以外は青）
+            colors = ['green' if angle == selected_angle else 'blue' for angle in angles]
+
+            # ヒストグラム（棒グラフ）のプロット
+            bars = ax_histogram.bar(angles, totals, width=4, color=colors, edgecolor='black', alpha=0.7)
+
+            # 選択された角度に目立つマーカーを追加
+            selected_idx = angles.index(selected_angle)
+            ax_histogram.plot(selected_angle, totals[selected_idx], 'r*', markersize=20,
+                            label=f'Selected: {selected_angle:.0f}°')
+
+            # 軸ラベルとグリッド
+            ax_histogram.set_xlabel('Angle [deg] (fd-based)', fontsize=14)
+            ax_histogram.set_ylabel('Total Posterior Value', fontsize=14)
+            ax_histogram.grid(True, alpha=0.3)
+            ax_histogram.legend(fontsize=12)
+            ax_histogram.axhline(y=0, color='k', linestyle='-', linewidth=0.5)
+        else:
+            # angle_evaluationがない場合は空のプロット
+            ax_histogram.text(0.5, 0.5, 'No avoidance analysis\n(step < 8)',
+                            ha='center', va='center', transform=ax_histogram.transAxes,
+                            fontsize=16)
+            ax_histogram.set_xlabel('Angle [deg]')
+            ax_histogram.set_ylabel('Total Posterior Value')
+
         # 画像を保存
         fig.savefig(f"{output_dir}/frame_{step_idx:04d}.png", dpi=150, bbox_inches='tight')
         plt.close(fig)
-        
+
         return f"{output_dir}/frame_{step_idx:04d}.png"
 
 

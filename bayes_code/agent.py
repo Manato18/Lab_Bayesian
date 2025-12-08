@@ -245,6 +245,7 @@ class Agent:
         if step < 8:
             avoid_angle = 0.0
             flag = True
+            angle_results = None  # ステップ8未満は回避分析なし
             print(f"  [移動指令計算] ステップ{step}: 直線移動モード（回避なし）")
         else:
             # 回避角度を計算（fd基準、座標系もfd基準なので変換不要）
@@ -377,7 +378,13 @@ class Agent:
         self.prev_fd = current_position['fd']
         self.prev_pd = current_position['pd']
 
-        return command, new_position, emergency_avoidance
+        # 角度評価結果（可視化用）
+        angle_evaluation = {
+            'angle_results': angle_results,  # 各角度での合計値
+            'selected_angle': float(avoid_angle)  # 選択された回避角度
+        }
+
+        return command, new_position, emergency_avoidance, angle_evaluation
 
     def _analyze_posterior_for_avoidance(self, X_sel, Y_sel, posterior_sel, danger_threshold, fd_offset=0.0):
         """

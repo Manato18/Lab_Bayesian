@@ -688,9 +688,12 @@ class ControlPC:
         print(f"  [移動指令計算] 事後分布から回避方向を計算中...")
 
         # Agentクラスのメソッドに処理を委譲
-        command, new_position, emergency_avoidance = self.agent.calculate_avoidance_command(
+        command, new_position, emergency_avoidance, angle_evaluation = self.agent.calculate_avoidance_command(
             current_position, step
         )
+
+        # 角度評価結果を保持（可視化で使用）
+        self.angle_evaluation = angle_evaluation
 
         return command, new_position, emergency_avoidance
 
@@ -732,12 +735,13 @@ class ControlPC:
                 y_el_vec=posterior_data['y_el_vec'],
                 y_er_vec=posterior_data['y_er_vec'],
                 output_dir=self.viz_output_dir,
-                emergency_avoidance=emergency_avoidance
+                emergency_avoidance=emergency_avoidance,
+                angle_evaluation=getattr(self, 'angle_evaluation', None)
             )
-            
+
             print(f"  ✓ 可視化完了: {image_path}")
             return image_path
-            
+
         except Exception as e:
             print(f"  ✗ 可視化エラー: {e}")
             import traceback
@@ -910,11 +914,25 @@ class ControlPC:
             # 符号反転は不要（pd - fdの計算結果が既に正しい符号規則）
             # 正の値 = 右回転、負の値 = 左回転
 
+            # 一時的に符号を反転（回避方向と放射方向を逆にする）
+            # ただし、±60度の場合はさらに逆にする（つまり元の符号に戻す）
+            avoidance_angle = command['avoidance_direction']
+            is_emergency_60 = abs(abs(avoidance_angle) - 60.0) < 0.1  # ±60度かどうか
+
+            if is_emergency_60:
+                # ±60度の場合：符号反転しない（元の符号）
+                next_angle = avoidance_angle
+                pulse_direction = pulse_relative
+            else:
+                # 通常の場合：符号反転
+                next_angle = -avoidance_angle
+                pulse_direction = -pulse_relative
+
             response = {
                 'Time': datetime.datetime.now().isoformat(),
                 'NextMove': command['move_distance'],  # mmで送信
-                'NextAngle': command['avoidance_direction'],  # 度で送信
-                'PulseDirection': pulse_relative  # 頭部方向からの相対角度（度）で送信（左:-90～0、右:0～90）
+                'NextAngle': next_angle,  # 度で送信
+                'PulseDirection': pulse_direction  # 頭部方向からの相対角度（度）で送信
             }
 
             print(f"  応答送信: NextMove={response['NextMove']:.1f}mm, "
