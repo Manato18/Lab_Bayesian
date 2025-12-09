@@ -665,6 +665,115 @@ class ControlPC:
             'obs_y': obs_y_array
         }
 
+    def calculate_posterior_from_correlation(self, step, current_position, crosscor_l, crosscor_r):
+        """
+        相互相関データから直接事後分布を計算（物体定位をスキップ）
+
+        このメソッドは「ベイズ相互相関導入3.py」と同じアプローチを使用します。
+        物体定位（ピーク検出・左右マッチング・距離角度計算）をスキップし、
+        相互相関波形の閾値以上の時間点を直接ベイズ更新に使用します。
+
+        処理フロー:
+            1. 相互相関データを前処理（正規化、直達音除外、閾値処理）
+            2. 閾値以上の時間点を抽出
+            3. 空間行列を計算
+            4. ベイズ更新を実行
+
+        Args:
+            step (int): ステップ番号
+            current_position (dict): 現在位置 {'x': float, 'y': float, 'fd': float, 'pd': float}
+            crosscor_l (list): 左耳の相互相関データ
+            crosscor_r (list): 右耳の相互相関データ
+
+        Returns:
+            dict: 可視化に必要なデータ
+        """
+        # Agentの位置を更新
+        self.agent.PositionX = current_position['x']
+        self.agent.PositionY = current_position['y']
+        self.agent.fd = current_position['fd']
+        self.agent.pd = current_position['pd']
+        self.agent.step_idx = step
+
+        print(f"  [事後分布計算] 相互相関から直接事後分布を更新")
+
+        # 前処理：閾値以上の時間点を抽出
+        nonzero_times_l, nonzero_times_r = self.preprocess_correlation_for_bayes(
+            crosscor_l, crosscor_r
+        )
+
+        # 2次元配列に変換（bayesianが期待する形式: (1, n)）
+        y_el = nonzero_times_l.reshape(1, -1) if len(nonzero_times_l) > 0 else np.array([[]]).reshape(1, 0)
+        y_er = nonzero_times_r.reshape(1, -1) if len(nonzero_times_r) > 0 else np.array([[]]).reshape(1, 0)
+
+        print(f"  [事後分布計算] エコー時間配列: y_el形状={y_el.shape}, y_er形状={y_er.shape}")
+
+        # 空間行列を計算（head位置とpd（放射方向）を使用）
+        print(f"  [事後分布計算] 空間行列を計算中...")
+        current_r_2vec, current_theta_2vec_rad = r_theta_matrix(
+            np.array([current_position['head_x']]), np.array([current_position['head_y']]),
+            self.world.X, self.world.Y, np.array([current_position['pd']])
+        )
+
+        # 耳の位置を計算（head位置を基準、fd（飛行方向）に対して垂直）
+        earL_x, earL_y, earR_x, earR_y = ear_posit(
+            current_position['head_x'], current_position['head_y'], current_position['fd']
+        )
+
+        current_obs_goback_dist_matrix_L = real_dist_goback_matrix(
+            np.array([current_position['head_x']]), np.array([current_position['head_y']]),
+            np.array([earL_x]), np.array([earL_y]),
+            self.world.X, self.world.Y
+        )
+        current_obs_goback_dist_matrix_R = real_dist_goback_matrix(
+            np.array([current_position['head_x']]), np.array([current_position['head_y']]),
+            np.array([earR_x]), np.array([earR_y]),
+            self.world.X, self.world.Y
+        )
+
+        current_attenuation_matrix = dist_attenuation(current_r_2vec) * \
+                                      direc_attenuation(current_theta_2vec_rad)
+        current_confidence_matrix = sigmoid(current_attenuation_matrix,
+                                           config.threshold, config.grad)
+
+        print(f"  [事後分布計算] 空間行列計算完了")
+
+        # ベイズ更新
+        print(f"  [事後分布計算] ベイズ更新を実行中...")
+        data1, data2, data3, data4 = self.bayesian.update_belief(
+            step, y_el, y_er,
+            current_obs_goback_dist_matrix_L,
+            current_obs_goback_dist_matrix_R,
+            current_confidence_matrix
+        )
+        print(f"  [事後分布計算] ベイズ更新完了")
+
+        # エコーベクトルの作成（可視化用）
+        y_el_vec = np.ones(len(self.world.t_ax)) * config.eps_y
+        y_er_vec = np.ones(len(self.world.t_ax)) * config.eps_y
+
+        if len(y_el[0]) > 0:
+            for tl in y_el[0]:
+                time_idx_L = np.argmin(np.abs(self.world.t_ax - tl))
+                y_el_vec[time_idx_L] = 1.0
+
+        if len(y_er[0]) > 0:
+            for tr in y_er[0]:
+                time_idx_R = np.argmin(np.abs(self.world.t_ax - tr))
+                y_er_vec[time_idx_R] = 1.0
+
+        # 可視化に必要なデータを返す
+        return {
+            'data1': data1,
+            'data2': data2,
+            'data3': data3,
+            'data4': data4,
+            'y_el_vec': y_el_vec,
+            'y_er_vec': y_er_vec,
+            'obs_x': np.array([]),  # 相互相関方式では物体座標は計算しない
+            'obs_y': np.array([])
+        }
+
     def calculate_movement_command(self, step, current_position):
         """
         更新された事後分布から移動指令を計算
@@ -820,6 +929,69 @@ class ControlPC:
         """ラジアン → 度 変換"""
         return np.degrees(rad_value)
 
+    def preprocess_correlation_for_bayes(self, crosscor_l, crosscor_r):
+        """
+        相互相関データをベイズ更新用に前処理
+
+        処理内容:
+            1. 正規化（最大値が1になるように）
+            2. 直達音除外（最初のN サンプルをゼロに）
+            3. 閾値処理（閾値以下をゼロに）
+            4. 閾値以上の時間点を抽出
+
+        Args:
+            crosscor_l (list): 左耳の相互相関データ
+            crosscor_r (list): 右耳の相互相関データ
+
+        Returns:
+            tuple: (nonzero_times_l, nonzero_times_r)
+                - nonzero_times_l: 閾値以上の時間点（左耳）[秒]
+                - nonzero_times_r: 閾値以上の時間点（右耳）[秒]
+        """
+        # numpy配列に変換
+        l_corr = np.array(crosscor_l, dtype=float)
+        r_corr = np.array(crosscor_r, dtype=float)
+
+        # 正規化（最大値が1になるように）
+        # 直達音部分の最大値で正規化
+        max_l = np.max(l_corr[:config.direct_pulse_samples])
+        max_r = np.max(r_corr[:config.direct_pulse_samples])
+
+        if max_l > 0:
+            l_corr = l_corr / max_l
+        if max_r > 0:
+            r_corr = r_corr / max_r
+
+        print(f"  [相互相関前処理] 正規化完了: L最大値={max_l:.3f}, R最大値={max_r:.3f}")
+
+        # 直達音を除外（最初のN サンプルをゼロに）
+        l_corr[:config.direct_pulse_samples] = 0
+        r_corr[:config.direct_pulse_samples] = 0
+        print(f"  [相互相関前処理] 直達音除外完了: 最初の{config.direct_pulse_samples}サンプルをゼロ化")
+
+        # 閾値処理（閾値以下をゼロに）
+        l_corr[l_corr < config.correlation_threshold] = 0
+        r_corr[r_corr < config.correlation_threshold] = 0
+        print(f"  [相互相関前処理] 閾値処理完了: 閾値={config.correlation_threshold}")
+
+        # 閾値以上の時間点を抽出
+        nonzero_indices_l = np.where(l_corr > 0)[0]
+        nonzero_indices_r = np.where(r_corr > 0)[0]
+
+        # インデックスを時間に変換（サンプル番号 / サンプリング周波数 = 時間[秒]）
+        nonzero_times_l = nonzero_indices_l / config.correlation_sampling_rate
+        nonzero_times_r = nonzero_indices_r / config.correlation_sampling_rate
+
+        print(f"  [相互相関前処理] 左耳: {len(nonzero_times_l)}個の時間点を抽出")
+        print(f"  [相互相関前処理] 右耳: {len(nonzero_times_r)}個の時間点を抽出")
+
+        if len(nonzero_times_l) > 0:
+            print(f"  [相互相関前処理] 左耳時間範囲: {nonzero_times_l[0]*1000:.2f}ms ~ {nonzero_times_l[-1]*1000:.2f}ms")
+        if len(nonzero_times_r) > 0:
+            print(f"  [相互相関前処理] 右耳時間範囲: {nonzero_times_r[0]*1000:.2f}ms ~ {nonzero_times_r[-1]*1000:.2f}ms")
+
+        return nonzero_times_l, nonzero_times_r
+
     def handle_real_robot_request(self, crosscor_l, crosscor_r):
         """
         新形式の要求を処理（実機ロボット用）
@@ -847,19 +1019,6 @@ class ControlPC:
             # 相互相関波形をプロットして保存
             self.plot_correlation_waveforms(step, crosscor_l, crosscor_r)
 
-            # 物体定位を実行（新メソッド）
-            print("  [定位計算] 物体定位を実行中...")
-            detections = self.localizer.localize_from_crosscor(crosscor_l, crosscor_r)
-
-            if len(detections) > 0:
-                print(f"  [定位計算] {len(detections)}個の物体を検出しました")
-                for idx, det in enumerate(detections):
-                    print(f"    物体{idx+1}: 距離={det['distance']:.1f}mm, "
-                          f"角度={det['angle']:.1f}度, "
-                          f"強度={det['intensity']:.3f}")
-            else:
-                print("  [定位計算] 物体は検出されませんでした")
-
             # marker_serverから現在位置を取得（リアルタイム更新）
             print("  marker_serverから現在位置を取得中...")
             marker_position = self.get_robot_position_from_marker_server(
@@ -878,8 +1037,32 @@ class ControlPC:
 
             print(f"  現在位置: ({current_position['x']:.3f}, {current_position['y']:.3f})")
 
-            # 事後分布を計算・更新
-            posterior_data = self.calculate_posterior_from_detections(step, current_position, detections)
+            # 処理方式の選択：相互相関直接方式 vs 物体定位方式
+            if config.use_correlation_direct:
+                # 【新方式】相互相関を直接使用する方式
+                print("  [処理方式] 相互相関直接方式を使用")
+                posterior_data = self.calculate_posterior_from_correlation(
+                    step, current_position, crosscor_l, crosscor_r
+                )
+            else:
+                # 【従来方式】物体定位方式
+                print("  [処理方式] 物体定位方式を使用")
+
+                # 物体定位を実行
+                print("  [定位計算] 物体定位を実行中...")
+                detections = self.localizer.localize_from_crosscor(crosscor_l, crosscor_r)
+
+                if len(detections) > 0:
+                    print(f"  [定位計算] {len(detections)}個の物体を検出しました")
+                    for idx, det in enumerate(detections):
+                        print(f"    物体{idx+1}: 距離={det['distance']:.1f}mm, "
+                              f"角度={det['angle']:.1f}度, "
+                              f"強度={det['intensity']:.3f}")
+                else:
+                    print("  [定位計算] 物体は検出されませんでした")
+
+                # 事後分布を計算・更新
+                posterior_data = self.calculate_posterior_from_detections(step, current_position, detections)
 
             # 移動指令を計算
             command, new_position, emergency_avoidance = self.calculate_movement_command(step, current_position)
