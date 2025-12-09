@@ -1139,19 +1139,9 @@ class ControlPC:
             # 符号反転は不要（pd - fdの計算結果が既に正しい符号規則）
             # 正の値 = 右回転、負の値 = 左回転
 
-            # 一時的に符号を反転（回避方向と放射方向を逆にする）
-            # ただし、±60度の場合はさらに逆にする（つまり元の符号に戻す）
-            avoidance_angle = command['avoidance_direction']
-            is_emergency_60 = abs(abs(avoidance_angle) - 60.0) < 0.1  # ±60度かどうか
-
-            if is_emergency_60:
-                # ±60度の場合：符号反転しない（元の符号）
-                next_angle = avoidance_angle
-                pulse_direction = pulse_relative
-            else:
-                # 通常の場合：符号反転
-                next_angle = -avoidance_angle
-                pulse_direction = -pulse_relative
+            # 符号を反転（回避方向と放射方向を逆にする）
+            next_angle = -command['avoidance_direction']
+            pulse_direction = -pulse_relative
 
             response = {
                 'Time': datetime.datetime.now().isoformat(),
