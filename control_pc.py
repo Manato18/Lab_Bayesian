@@ -972,6 +972,10 @@ class ControlPC:
         r_corr[:config.direct_pulse_samples] = 0
         print(f"  [相互相関前処理] 直達音除外完了: 最初の{config.direct_pulse_samples}サンプルをゼロ化")
 
+        # 直達音除外後のデータを保存（フォールバック用）
+        l_corr_after_direct = l_corr.copy()
+        r_corr_after_direct = r_corr.copy()
+
         # 閾値処理（閾値以下をゼロに）
         l_corr[l_corr < config.correlation_threshold] = 0
         r_corr[r_corr < config.correlation_threshold] = 0
@@ -980,6 +984,25 @@ class ControlPC:
         # 閾値以上の時間点を抽出
         nonzero_indices_l = np.where(l_corr > 0)[0]
         nonzero_indices_r = np.where(r_corr > 0)[0]
+
+        # 閾値以上が0個の場合、上位3個を取得
+        if len(nonzero_indices_l) == 0:
+            print(f"  [相互相関前処理] 左耳: 閾値以上が0個のため、上位3個を取得")
+            # 直達音除外後のデータから上位3個のインデックスを取得
+            top_n = 3
+            top_indices_l = np.argsort(l_corr_after_direct)[-top_n:][::-1]  # 降順
+            # 値が0より大きいもののみ使用
+            nonzero_indices_l = top_indices_l[l_corr_after_direct[top_indices_l] > 0]
+            print(f"  [相互相関前処理] 左耳: 上位{len(nonzero_indices_l)}個を取得")
+
+        if len(nonzero_indices_r) == 0:
+            print(f"  [相互相関前処理] 右耳: 閾値以上が0個のため、上位3個を取得")
+            # 直達音除外後のデータから上位3個のインデックスを取得
+            top_n = 3
+            top_indices_r = np.argsort(r_corr_after_direct)[-top_n:][::-1]  # 降順
+            # 値が0より大きいもののみ使用
+            nonzero_indices_r = top_indices_r[r_corr_after_direct[top_indices_r] > 0]
+            print(f"  [相互相関前処理] 右耳: 上位{len(nonzero_indices_r)}個を取得")
 
         # インデックスを時間に変換（サンプル番号 / サンプリング周波数 = 時間[秒]）
         nonzero_times_l = nonzero_indices_l / config.correlation_sampling_rate
