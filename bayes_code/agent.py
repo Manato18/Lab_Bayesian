@@ -54,7 +54,7 @@ class Agent:
         self.last_danger_threshold = None
 
         # エージェントの物理的な大きさを考慮した衝突判定用パラメータ
-        self.agent_radius = 0.3  # エージェントの半径 [m]
+        self.agent_radius = 0.03  # エージェントの半径 [m]
         self.collision_threshold = -50  # 衝突とみなす事後分布の閾値（初期値、動的に更新される）
 
         self.PositionX = sim["init_pos"][0]
@@ -312,9 +312,9 @@ class Agent:
 
         # パルス放射方向の計算（回避後の方向 new_fd を基準にする）
         if step < 8:
-            # 最初の8ステップは回避後の進行方向より30度左（固定）
-            new_pd = self.normalize_angle_deg(new_fd - 30.0)
-            print(f"  [移動指令計算] ステップ{step}: パルス放射方向を回避後の方向から左30度固定 (new_fd={new_fd:.1f}° → pd={new_pd:.1f}°)")
+            # 最初の8ステップは回避後の進行方向より30度右（固定）
+            new_pd = self.normalize_angle_deg(new_fd + 30.0)
+            print(f"  [移動指令計算] ステップ{step}: パルス放射方向を回避後の方向から右30度固定 (new_fd={new_fd:.1f}° → pd={new_pd:.1f}°)")
         else:
             # ステップ8以降は回避後の進行方向を基準に、回避角度の半分だけ放射方向をずらす
             new_pd = self.normalize_angle_deg(new_fd + (avoid_angle * 0.5))

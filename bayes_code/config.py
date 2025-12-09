@@ -150,11 +150,11 @@ use_dummy_detection = True    # ダミー観測を使用するか
                       # True: 検出なし時にダミー観測を配置
                       # False: 従来通り（検出なしの場合は更新なし）
 
-dummy_detection_x = 5.0       # ダミー観測のX座標 [m]
+dummy_detection_x = 0.0       # ダミー観測のX座標 [m]
                       # 使用: control_pc.py
                       # ワールド範囲外の座標（x_max=3.5m より大きい）
 
-dummy_detection_y = 5.0       # ダミー観測のY座標 [m]
+dummy_detection_y = 0.0       # ダミー観測のY座標 [m]
                       # 使用: control_pc.py
                       # ワールド範囲外の座標（y_max=3.5m より大きい）
 
