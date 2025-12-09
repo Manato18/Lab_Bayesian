@@ -340,23 +340,29 @@ class BatVisualizer:
             angles = sorted(angle_results.keys())
             totals = [angle_results[angle]['total'] for angle in angles]
 
-            # 色の設定（選択された角度は緑、それ以外は青）
-            colors = ['green' if angle == selected_angle else 'blue' for angle in angles]
+            # selected_angleがanglesに含まれているかチェック
+            if selected_angle in angles:
+                # 通常モード：ヒストグラムを表示
+                colors = ['green' if angle == selected_angle else 'blue' for angle in angles]
+                bars = ax_histogram.bar(angles, totals, width=4, color=colors, edgecolor='black', alpha=0.7)
 
-            # ヒストグラム（棒グラフ）のプロット
-            bars = ax_histogram.bar(angles, totals, width=4, color=colors, edgecolor='black', alpha=0.7)
+                # 選択された角度に目立つマーカーを追加
+                selected_idx = angles.index(selected_angle)
+                ax_histogram.plot(selected_angle, totals[selected_idx], 'r*', markersize=20,
+                                label=f'Selected: {selected_angle:.0f}°')
 
-            # 選択された角度に目立つマーカーを追加
-            selected_idx = angles.index(selected_angle)
-            ax_histogram.plot(selected_angle, totals[selected_idx], 'r*', markersize=20,
-                            label=f'Selected: {selected_angle:.0f}°')
-
-            # 軸ラベルとグリッド
-            ax_histogram.set_xlabel('Angle [deg] (fd-based)', fontsize=14)
-            ax_histogram.set_ylabel('Total Posterior Value', fontsize=14)
-            ax_histogram.grid(True, alpha=0.3)
-            ax_histogram.legend(fontsize=12)
-            ax_histogram.axhline(y=0, color='k', linestyle='-', linewidth=0.5)
+                ax_histogram.set_xlabel('Angle [deg] (fd-based)', fontsize=14)
+                ax_histogram.set_ylabel('Total Posterior Value', fontsize=14)
+                ax_histogram.grid(True, alpha=0.3)
+                ax_histogram.legend(fontsize=12)
+                ax_histogram.axhline(y=0, color='k', linestyle='-', linewidth=0.5)
+            else:
+                # 緊急回避モード：メッセージを表示
+                ax_histogram.text(0.5, 0.5, f'Emergency Avoidance Mode\nSelected angle: {selected_angle:.0f}°',
+                                ha='center', va='center', transform=ax_histogram.transAxes,
+                                fontsize=16, color='red', weight='bold')
+                ax_histogram.set_xlabel('Angle [deg]')
+                ax_histogram.set_ylabel('Total Posterior Value')
         else:
             # angle_evaluationがない場合は空のプロット
             ax_histogram.text(0.5, 0.5, 'No avoidance analysis\n(step < 8)',
