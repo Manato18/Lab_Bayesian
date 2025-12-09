@@ -312,9 +312,11 @@ class Agent:
 
         # パルス放射方向の計算（回避後の方向 new_fd を基準にする）
         if step < 8:
-            # 最初の8ステップは回避後の進行方向より30度右（固定）
-            new_pd = self.normalize_angle_deg(new_fd + 30.0)
-            print(f"  [移動指令計算] ステップ{step}: パルス放射方向を回避後の方向から右30度固定 (new_fd={new_fd:.1f}° → pd={new_pd:.1f}°)")
+            # 最初の8ステップはパルス放射方向を 0, -30, 30, 0, -30, 30, 0, -30 のパターンで変化
+            pattern = [0, -30, 30, 0, -30, 30, 0, -30]
+            pulse_offset = pattern[step]
+            new_pd = self.normalize_angle_deg(new_fd + pulse_offset)
+            print(f"  [移動指令計算] ステップ{step}: パルス放射方向を回避後の方向から{pulse_offset:+.0f}度 (new_fd={new_fd:.1f}° → pd={new_pd:.1f}°)")
         else:
             # ステップ8以降は回避後の進行方向を基準に、回避角度の半分だけ放射方向をずらす
             new_pd = self.normalize_angle_deg(new_fd + (avoid_angle * 0.5))
