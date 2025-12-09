@@ -985,6 +985,12 @@ class ControlPC:
         nonzero_indices_l = np.where(l_corr > 0)[0]
         nonzero_indices_r = np.where(r_corr > 0)[0]
 
+        # 0.03秒以上の時間点を除外（フォールバック前）
+        max_time_samples = int(0.03 * config.correlation_sampling_rate)  # 0.03秒に相当するサンプル数
+        nonzero_indices_l = nonzero_indices_l[nonzero_indices_l < max_time_samples]
+        nonzero_indices_r = nonzero_indices_r[nonzero_indices_r < max_time_samples]
+        print(f"  [相互相関前処理] 0.03秒以上を除外: L={len(nonzero_indices_l)}個, R={len(nonzero_indices_r)}個")
+
         # 閾値以上が0個の場合、上位3個を取得
         if len(nonzero_indices_l) == 0:
             print(f"  [相互相関前処理] 左耳: 閾値以上が0個のため、上位3個を取得")
@@ -993,7 +999,9 @@ class ControlPC:
             top_indices_l = np.argsort(l_corr_after_direct)[-top_n:][::-1]  # 降順
             # 値が0より大きいもののみ使用
             nonzero_indices_l = top_indices_l[l_corr_after_direct[top_indices_l] > 0]
-            print(f"  [相互相関前処理] 左耳: 上位{len(nonzero_indices_l)}個を取得")
+            # 0.03秒以上を除外
+            nonzero_indices_l = nonzero_indices_l[nonzero_indices_l < max_time_samples]
+            print(f"  [相互相関前処理] 左耳: 上位{len(nonzero_indices_l)}個を取得（0.03秒以上除外後）")
 
         if len(nonzero_indices_r) == 0:
             print(f"  [相互相関前処理] 右耳: 閾値以上が0個のため、上位3個を取得")
@@ -1002,7 +1010,9 @@ class ControlPC:
             top_indices_r = np.argsort(r_corr_after_direct)[-top_n:][::-1]  # 降順
             # 値が0より大きいもののみ使用
             nonzero_indices_r = top_indices_r[r_corr_after_direct[top_indices_r] > 0]
-            print(f"  [相互相関前処理] 右耳: 上位{len(nonzero_indices_r)}個を取得")
+            # 0.03秒以上を除外
+            nonzero_indices_r = nonzero_indices_r[nonzero_indices_r < max_time_samples]
+            print(f"  [相互相関前処理] 右耳: 上位{len(nonzero_indices_r)}個を取得（0.03秒以上除外後）")
 
         # インデックスを時間に変換（サンプル番号 / サンプリング周波数 = 時間[秒]）
         nonzero_times_l = nonzero_indices_l / config.correlation_sampling_rate
