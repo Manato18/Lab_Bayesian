@@ -27,8 +27,9 @@ import numpy as np
 h = 0.01              # 格子点間隔 [m]
                       # 使用: calc.py, bayesian.py, world.py
 
-freq = 40000          # 周波数 [Hz] - コウモリが発する超音波の周波数
+freq = 37000          # 周波数 [Hz] - コウモリが発する超音波の周波数
                       # 使用: calc.py
+                      # 旧値: 40000
 
 c = 340               # 音速 [m/s]
                       # 使用: calc.py, main.py, world.py
@@ -80,9 +81,10 @@ Mx = My = int(np.round(y_max / h))       # 空間格子点数
 # 検出パラメータ (Detection Parameters)
 # ========================================
 
-threshold = 0.0032        # エコー検知最小感度（さらに、conf1の半値境目）
+threshold = 0.007         # エコー検知最小感度（さらに、conf1の半値境目）
                       # ベイズ定位点導入.pyに合わせる（旧: 1.2 * 0.1**3 = 0.0012）
                       # 使用: calc.py
+                      # 旧値: 0.0032
 
 grad = 10**13             # conf1の勾配（sigmoid関数の急峻さ）
                       # ベイズ定位点導入.pyに合わせる（旧: 10**15）
