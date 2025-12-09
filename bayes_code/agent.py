@@ -745,7 +745,7 @@ class Agent:
                     'k--', alpha=0.6, linewidth=2.5, label='Movement Path', zorder=3)
 
         # グラフの設定
-        plt.legend(loc='upper right', fontsize=11, framealpha=0.9)
+        # plt.legend(loc='upper right', fontsize=11, framealpha=0.9)
         plt.grid(True, alpha=0.3)
         plt.gca().set_aspect('equal', adjustable='box')
         plt.xlabel('X [m]', fontsize=12)

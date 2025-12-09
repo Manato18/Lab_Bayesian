@@ -619,7 +619,7 @@ class ControlPC:
 
         # ベイズ更新（戻り値を受け取る）
         print(f"  [事後分布計算] ベイズ更新を実行中...")
-        data1, data2, data3, data4 = self.bayesian.update_belief(
+        data1, data2, data3, data4, data5 = self.bayesian.update_belief(
             step, y_el, y_er,
             current_obs_goback_dist_matrix_L,
             current_obs_goback_dist_matrix_R,
@@ -659,6 +659,7 @@ class ControlPC:
             'data2': data2,
             'data3': data3,
             'data4': data4,
+            'data5': data5,
             'y_el_vec': y_el_vec,
             'y_er_vec': y_er_vec,
             'obs_x': obs_x_array,
@@ -740,7 +741,7 @@ class ControlPC:
 
         # ベイズ更新
         print(f"  [事後分布計算] ベイズ更新を実行中...")
-        data1, data2, data3, data4 = self.bayesian.update_belief(
+        data1, data2, data3, data4, data5 = self.bayesian.update_belief(
             step, y_el, y_er,
             current_obs_goback_dist_matrix_L,
             current_obs_goback_dist_matrix_R,
@@ -768,6 +769,7 @@ class ControlPC:
             'data2': data2,
             'data3': data3,
             'data4': data4,
+            'data5': data5,
             'y_el_vec': y_el_vec,
             'y_er_vec': y_er_vec,
             'obs_x': np.array([]),  # 相互相関方式では物体座標は計算しない
@@ -840,6 +842,7 @@ class ControlPC:
                 data2=posterior_data['data2'],
                 data3=posterior_data['data3'],
                 data4=posterior_data['data4'],
+                data5=posterior_data['data5'],
                 t_ax=self.world.t_ax,
                 y_el_vec=posterior_data['y_el_vec'],
                 y_er_vec=posterior_data['y_er_vec'],

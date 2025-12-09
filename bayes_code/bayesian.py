@@ -333,4 +333,5 @@ class Bayesian:
         data2 = current_confidence_matrix[0]
         data3 = self.Px_yn_log_current
         data4 = self.Px_yn_conf_log_current
-        return data1, data2, data3, data4
+        data5 = self.Pyn_x_R_current
+        return data1, data2, data3, data4, data5

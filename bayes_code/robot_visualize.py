@@ -71,8 +71,8 @@ class BatVisualizer:
 
         # タイトル設定
         ax_y.set_title("likely_hood_newL")
-        ax_y2.set_title("confidence_matrix")
-        ax_y3.set_title("posterior(without mmemory)")
+        ax_y2.set_title("likely_hood_newR")
+        ax_y3.set_title("confidence_matrix")
         ax_y4.set_title("posterior(with mmemory)")
         ax_histogram.set_title("Avoidance Angle Evaluation")
 
@@ -217,14 +217,14 @@ class BatVisualizer:
                         bat_x, bat_y, fd, pd,
                         pole_x, pole_y,
                         obs_x, obs_y,
-                        data1, data2, data3, data4,
+                        data1, data2, data3, data4, data5,
                         t_ax, y_el_vec, y_er_vec,
                         output_dir,
                         emergency_avoidance=False,
                         angle_evaluation=None):
         """
         単一ステップのプロットと保存（履歴配列不要、過去の観測点なし）
-        
+
         Parameters:
         -----------
         step_idx : int
@@ -239,7 +239,7 @@ class BatVisualizer:
             ポール（障害物）の座標
         obs_x, obs_y : float or np.ndarray
             現在の観測点の座標（スカラー値または配列）
-        data1, data2, data3, data4 : np.ndarray
+        data1, data2, data3, data4, data5 : np.ndarray
             ベイズ推論データ（2D配列: (Mx+1, My+1)）
         t_ax : np.ndarray
             時間軸
@@ -270,8 +270,8 @@ class BatVisualizer:
         
         # データプロット
         pcm1, c_min1, c_max1 = self.setup_colormap(ax_y, data1)
-        pcm2, c_min2, c_max2 = self.setup_colormap(ax_y2, data2)
-        pcm3, c_min3, c_max3 = self.setup_colormap(ax_y3, data3)
+        pcm2, c_min2, c_max2 = self.setup_colormap(ax_y2, data5)
+        pcm3, c_min3, c_max3 = self.setup_colormap(ax_y3, data2)
         
         # data4の特殊なカラースケール処理
         if np.any(data4 > 2*self.min_p):
