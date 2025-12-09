@@ -391,7 +391,7 @@ class Agent:
     def _analyze_posterior_for_avoidance(self, X_sel, Y_sel, posterior_sel, danger_threshold, fd_offset=0.0):
         """
         回避のための事後分布分析（fd基準）
-        fdの方向を中心に左右30度までを5度ごとに、0.7mまでの値を0.05mごとに足して
+        fdの方向を中心に左右30度までを5度ごとに、0.55mまでの値を0.05mごとに足して
         それぞれの角度での合計を表示する
 
         Args:
@@ -409,7 +409,7 @@ class Agent:
         fd_relative_angles = np.arange(-30, 30, 5)  # -30, -25, -20, ..., 25, 30
         # 座標系もfd基準なので変換は不要
         angles = fd_relative_angles + fd_offset
-        distances = np.arange(0.10, 0.75, 0.05)  # 0.10, 0.15, 0.20, ..., 0.70
+        distances = np.arange(0.10, 0.55, 0.05)  # 0.10, 0.15, 0.20, ..., 0.50
         
         # 結果を格納する辞書（fd基準の角度をキーにする）
         angle_results = {}
@@ -481,13 +481,13 @@ class Agent:
         print(f"最も安全な角度（fd基準）: {min_angle}度 (合計値: {min_value:.2f})")
         print("=" * 50)
         
-        
-        # 新しい回避機能：既存の計算結果を活用して角度-30度から30度の範囲で距離0.1~0.25m未満に閾値以上のものがあれば左右で数を数えて少ない方に回避する
+
+        # 新しい回避機能：既存の計算結果を活用して角度-30度から30度の範囲で距離0.1~0.3m未満に閾値以上のものがあれば左右で数を数えて少ない方に回避する
         print("\n=== 緊急回避判定（fd基準） ===")
         print(f"使用する危険判定閾値: {danger_threshold:.2f}")
 
-        # 距離0.1~0.25m未満のデータをチェック（既存の計算結果を活用）
-        check_distances = [d for d in distances if 0.1 <= d < 0.25]  # 0.1~0.25m未満の距離
+        # 距離0.1~0.3m未満のデータをチェック（既存の計算結果を活用）
+        check_distances = [d for d in distances if 0.1 <= d < 0.3]  # 0.1~0.3m未満の距離
 
         # 閾値以上の箇所を危険として認定（壁の外-20も含む）
         dangerous_angles = []
