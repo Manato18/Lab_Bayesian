@@ -994,25 +994,25 @@ class ControlPC:
         # 閾値以上が0個の場合、上位3個を取得
         if len(nonzero_indices_l) == 0:
             print(f"  [相互相関前処理] 左耳: 閾値以上が0個のため、上位3個を取得")
-            # 直達音除外後のデータから上位3個のインデックスを取得
+            # 0.03秒未満の範囲に制限してから上位3個を取得
+            l_corr_limited = l_corr_after_direct[:max_time_samples].copy()
             top_n = 3
-            top_indices_l = np.argsort(l_corr_after_direct)[-top_n:][::-1]  # 降順
+            # 限定された範囲内での上位3個のインデックスを取得
+            top_indices_l = np.argsort(l_corr_limited)[-top_n:][::-1]  # 降順
             # 値が0より大きいもののみ使用
-            nonzero_indices_l = top_indices_l[l_corr_after_direct[top_indices_l] > 0]
-            # 0.03秒以上を除外
-            nonzero_indices_l = nonzero_indices_l[nonzero_indices_l < max_time_samples]
-            print(f"  [相互相関前処理] 左耳: 上位{len(nonzero_indices_l)}個を取得（0.03秒以上除外後）")
+            nonzero_indices_l = top_indices_l[l_corr_limited[top_indices_l] > 0]
+            print(f"  [相互相関前処理] 左耳: 上位{len(nonzero_indices_l)}個を取得（0.03秒未満の範囲から）")
 
         if len(nonzero_indices_r) == 0:
             print(f"  [相互相関前処理] 右耳: 閾値以上が0個のため、上位3個を取得")
-            # 直達音除外後のデータから上位3個のインデックスを取得
+            # 0.03秒未満の範囲に制限してから上位3個を取得
+            r_corr_limited = r_corr_after_direct[:max_time_samples].copy()
             top_n = 3
-            top_indices_r = np.argsort(r_corr_after_direct)[-top_n:][::-1]  # 降順
+            # 限定された範囲内での上位3個のインデックスを取得
+            top_indices_r = np.argsort(r_corr_limited)[-top_n:][::-1]  # 降順
             # 値が0より大きいもののみ使用
-            nonzero_indices_r = top_indices_r[r_corr_after_direct[top_indices_r] > 0]
-            # 0.03秒以上を除外
-            nonzero_indices_r = nonzero_indices_r[nonzero_indices_r < max_time_samples]
-            print(f"  [相互相関前処理] 右耳: 上位{len(nonzero_indices_r)}個を取得（0.03秒以上除外後）")
+            nonzero_indices_r = top_indices_r[r_corr_limited[top_indices_r] > 0]
+            print(f"  [相互相関前処理] 右耳: 上位{len(nonzero_indices_r)}個を取得（0.03秒未満の範囲から）")
 
         # インデックスを時間に変換（サンプル番号 / サンプリング周波数 = 時間[秒]）
         nonzero_times_l = nonzero_indices_l / config.correlation_sampling_rate
