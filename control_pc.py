@@ -827,11 +827,11 @@ class ControlPC:
         print(f"  [可視化] ステップ{step}の状態を可視化中...")
 
         try:
-            # plot_single_step()を呼び出して可視化（head位置を使用）
+            # plot_single_step()を呼び出して可視化（body位置を使用）
             image_path = self.visualizer.plot_single_step(
                 step_idx=step,
-                bat_x=current_position['head_x'],
-                bat_y=current_position['head_y'],
+                bat_x=current_position['x'],
+                bat_y=current_position['y'],
                 fd=current_position['fd'],
                 pd=current_position['pd'],
                 pole_x=self.world.pole_x,

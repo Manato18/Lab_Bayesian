@@ -617,26 +617,26 @@ class Agent:
                        label='Obstacles', zorder=5)
 
         # 特定の角度（0度、-10度、30度）での衝突チェック範囲を円で描画
-        test_angles = [0, -10, 30]  # fd基準の角度
-        from matplotlib.patches import Circle
-        for i, test_angle in enumerate(test_angles):
-            # fd基準の角度から移動先を計算（ワールド座標系）
-            new_fd_test = self.normalize_angle_deg(current_pos['fd'] - test_angle)
-            test_x = current_pos['x'] + move_distance_m * np.cos(np.deg2rad(new_fd_test))
-            test_y = current_pos['y'] + move_distance_m * np.sin(np.deg2rad(new_fd_test))
-
-            # 衝突チェック範囲を青色の円で描画（body中心、robot_radius使用）
-            circle = Circle((test_x, test_y), robot_radius,
-                           fill=False, edgecolor='blue', linewidth=2,
-                           linestyle='-', alpha=0.8, zorder=6)
-            plt.gca().add_patch(circle)
-
-            # ラベルを追加（最初の円のみ）
-            if i == 0:
-                plt.plot([], [], color='blue', linestyle='-', linewidth=2,
-                        label=f'Collision Check Area (r={robot_radius:.3f}m)')
-
-        print(f"  [Visualization] {len(test_angles)} collision check circles plotted at angles: {test_angles}")
+        # test_angles = [0, -10, 30]  # fd基準の角度
+        # from matplotlib.patches import Circle
+        # for i, test_angle in enumerate(test_angles):
+        #     # fd基準の角度から移動先を計算（ワールド座標系）
+        #     new_fd_test = self.normalize_angle_deg(current_pos['fd'] - test_angle)
+        #     test_x = current_pos['x'] + move_distance_m * np.cos(np.deg2rad(new_fd_test))
+        #     test_y = current_pos['y'] + move_distance_m * np.sin(np.deg2rad(new_fd_test))
+        #
+        #     # 衝突チェック範囲を青色の円で描画（body中心、robot_radius使用）
+        #     circle = Circle((test_x, test_y), robot_radius,
+        #                    fill=False, edgecolor='blue', linewidth=2,
+        #                    linestyle='-', alpha=0.8, zorder=6)
+        #     plt.gca().add_patch(circle)
+        #
+        #     # ラベルを追加（最初の円のみ）
+        #     if i == 0:
+        #         plt.plot([], [], color='blue', linestyle='-', linewidth=2,
+        #                 label=f'Collision Check Area (r={robot_radius:.3f}m)')
+        #
+        # print(f"  [Visualization] {len(test_angles)} collision check circles plotted at angles: {test_angles}")
 
         # 危険領域をグレーの散布図でプロット
         if self.last_danger_threshold is not None:
