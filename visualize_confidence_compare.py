@@ -22,13 +22,16 @@ h_actual = 0.01       # 実際のコードで使われるh [m]
 c = 340               # 音速 [m/s]
 grad = 10**13         # sigmoid関数の勾配
 
-# 比較する2つのパラメータセット
+# 比較する3つのパラメータセット
 threshold_1 = 0.0032  # 左側のthreshold
-threshold_2 = 0.007   # 右側のthreshold
+threshold_2 = 0.007   # 中央のthreshold
+threshold_3 = 0.0062  # 右側のthreshold
 a_1 = 0.005           # 左側の口の半径 [m]
-a_2 = 0.005           # 右側の口の半径 [m]
+a_2 = 0.005           # 中央の口の半径 [m]
+a_3 = 0.0048          # 右側の口の半径 [m]
 freq_1 = 40000        # 左側の周波数 [Hz]
-freq_2 = 37000        # 右側の周波数 [Hz]
+freq_2 = 37000        # 中央の周波数 [Hz]
+freq_3 = 37000        # 右側の周波数 [Hz]
 
 # シミュレーション空間
 x_min = -1.0
@@ -44,8 +47,9 @@ bat_pd = 90
 print("=" * 60)
 print("Confidence Matrix Comparison")
 print("=" * 60)
-print(f"Left:  threshold = {threshold_1}, a = {a_1}, freq = {freq_1}")
-print(f"Right: threshold = {threshold_2}, a = {a_2}, freq = {freq_2}")
+print(f"Left:   threshold = {threshold_1}, a = {a_1}, freq = {freq_1}")
+print(f"Center: threshold = {threshold_2}, a = {a_2}, freq = {freq_2}")
+print(f"Right:  threshold = {threshold_3}, a = {a_3}, freq = {freq_3}")
 print()
 
 # ========================================
@@ -111,19 +115,23 @@ def compute_confidence(threshold, a, freq):
 print("計算中...")
 X1, Y1, confidence_1 = compute_confidence(threshold_1, a_1, freq_1)
 X2, Y2, confidence_2 = compute_confidence(threshold_2, a_2, freq_2)
+X3, Y3, confidence_3 = compute_confidence(threshold_3, a_3, freq_3)
 
 print(f"\nLeft (threshold = {threshold_1}, a = {a_1}, freq = {freq_1}):")
 print(f"  Confidence = 1.0: {100 * np.sum(confidence_1 >= 0.9999) / confidence_1.size:.2f}%")
 
-print(f"\nRight (threshold = {threshold_2}, a = {a_2}, freq = {freq_2}):")
+print(f"\nCenter (threshold = {threshold_2}, a = {a_2}, freq = {freq_2}):")
 print(f"  Confidence = 1.0: {100 * np.sum(confidence_2 >= 0.9999) / confidence_2.size:.2f}%")
+
+print(f"\nRight (threshold = {threshold_3}, a = {a_3}, freq = {freq_3}):")
+print(f"  Confidence = 1.0: {100 * np.sum(confidence_3 >= 0.9999) / confidence_3.size:.2f}%")
 
 # ========================================
 # 可視化
 # ========================================
 
 print("\n可視化中...")
-fig, axes = plt.subplots(1, 2, figsize=(18, 9))
+fig, axes = plt.subplots(1, 3, figsize=(27, 9))
 
 # パルス方向の矢印
 arrow_length = 0.3
@@ -168,7 +176,7 @@ ax1.text(0.02, 0.98, info1, transform=ax1.transAxes,
          fontsize=10, verticalalignment='top',
          bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9, edgecolor='black', linewidth=1.5))
 
-# 右側: threshold_2
+# 中央: threshold_2
 ax2 = axes[1]
 im2 = ax2.contourf(X2, Y2, confidence_2, levels=50, cmap='RdYlGn', vmin=0, vmax=1)
 ax2.plot(bat_x, bat_y, 'r*', markersize=25, label='Robot',
@@ -203,6 +211,44 @@ info2 = (
     f"  = 1.0: {100 * np.sum(confidence_2 >= 0.9999) / confidence_2.size:.1f}%"
 )
 ax2.text(0.02, 0.98, info2, transform=ax2.transAxes,
+         fontsize=10, verticalalignment='top',
+         bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9, edgecolor='black', linewidth=1.5))
+
+# 右側: threshold_3
+ax3 = axes[2]
+im3 = ax3.contourf(X3, Y3, confidence_3, levels=50, cmap='RdYlGn', vmin=0, vmax=1)
+ax3.plot(bat_x, bat_y, 'r*', markersize=25, label='Robot',
+         markeredgecolor='white', markeredgewidth=2)
+ax3.arrow(bat_x, bat_y, dx, dy,
+          head_width=0.12, head_length=0.1, fc='red', ec='red', linewidth=3)
+contour3 = ax3.contour(X3, Y3, confidence_3, levels=[1.0],
+                       colors='red', linewidths=4, linestyles='-')
+
+ax3.set_xlabel('X [m]', fontsize=14, fontweight='bold')
+ax3.set_ylabel('Y [m]', fontsize=14, fontweight='bold')
+ax3.set_title(f'Confidence Matrix\nthreshold = {threshold_3}, freq = {freq_3} Hz',
+              fontsize=16, fontweight='bold', pad=20)
+ax3.set_xlim(x_min, x_max)
+ax3.set_ylim(y_min, y_max)
+ax3.set_aspect('equal')
+ax3.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+
+cbar3 = plt.colorbar(im3, ax=ax3, fraction=0.046, pad=0.04)
+cbar3.set_label('Confidence', fontsize=12, fontweight='bold')
+
+# 統計情報
+info3 = (
+    f"Parameters:\n"
+    f"  threshold = {threshold_3}\n"
+    f"  a = {a_3} m\n"
+    f"  grad = {grad:.2e}\n"
+    f"  freq = {freq_3} Hz\n"
+    f"  h = {h_actual} m\n"
+    f"  r0 = {h_actual/2} m\n\n"
+    f"High confidence:\n"
+    f"  = 1.0: {100 * np.sum(confidence_3 >= 0.9999) / confidence_3.size:.1f}%"
+)
+ax3.text(0.02, 0.98, info3, transform=ax3.transAxes,
          fontsize=10, verticalalignment='top',
          bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9, edgecolor='black', linewidth=1.5))
 
