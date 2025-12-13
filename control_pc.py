@@ -951,6 +951,34 @@ class ControlPC:
         print(f"  相互相関波形を保存: {filepath}")
         print(f"  相関波形データを保存: {dat_filepath}")
 
+    def save_raw_waveforms(self, step, sig_l, sig_r):
+        """
+        生波形を.datファイルとして保存（プロットはしない）
+
+        Args:
+            step (int): ステップ番号
+            sig_l (list or np.array): 左耳の生波形
+            sig_r (list or np.array): 右耳の生波形
+        """
+        if sig_l is None or sig_r is None:
+            print("  生波形データがありません、スキップ")
+            return
+
+        # データをnumpy配列に変換
+        sig_l_array = np.array(sig_l)
+        sig_r_array = np.array(sig_r)
+
+        # ファイル名を生成
+        filename = f"raw_waveforms_step{step:04d}.dat"
+        filepath = os.path.join(self.save_dir, filename)
+
+        # サンプル番号, 左, 右の3列で保存
+        samples = np.arange(len(sig_l_array))
+        data_to_save = np.column_stack((samples, sig_l_array, sig_r_array))
+        np.savetxt(filepath, data_to_save, header="sample left right", comments='')
+
+        print(f"  生波形データを保存: {filepath}")
+
     @staticmethod
     def _mm_to_m(mm_value):
         """mm → m 変換"""
@@ -1085,13 +1113,15 @@ class ControlPC:
 
         return nonzero_times_l, nonzero_times_r
 
-    def handle_real_robot_request(self, crosscor_l, crosscor_r):
+    def handle_real_robot_request(self, crosscor_l, crosscor_r, sig_l=None, sig_r=None):
         """
         新形式の要求を処理（実機ロボット用）
 
         Args:
             crosscor_l (list): 左耳の相互相関データ
             crosscor_r (list): 右耳の相互相関データ
+            sig_l (list, optional): 左耳の生波形データ
+            sig_r (list, optional): 右耳の生波形データ
 
         Returns:
             dict: 応答（実機ロボット形式）
@@ -1107,10 +1137,15 @@ class ControlPC:
 
             # 実機側で左右マイクが逆配線のため、ここで左右を入れ替えて整合を取る
             crosscor_l, crosscor_r = crosscor_r, crosscor_l
+            if sig_l is not None and sig_r is not None:
+                sig_l, sig_r = sig_r, sig_l
             print("  ※ 受信データの左右チャンネルを入れ替えて処理します")
 
             # 相互相関波形をプロットして保存
             self.plot_correlation_waveforms(step, crosscor_l, crosscor_r)
+
+            # 生波形を保存（プロットはしない）
+            self.save_raw_waveforms(step, sig_l, sig_r)
 
             # marker_serverから現在位置を取得（リアルタイム更新）
             print("  marker_serverから現在位置を取得中...")
@@ -1399,14 +1434,21 @@ class ControlPC:
                     request = json.loads(data)
 
                     # リクエスト形式を確認
-                    if isinstance(request, list) and len(request) == 2:
-                        # 新形式: [[crosscor_l], [crosscor_r]]
+                    if isinstance(request, list) and len(request) == 4:
+                        # 新形式（生波形あり）: [[crosscor_l], [crosscor_r], [sig_l], [sig_r]]
                         crosscor_l = request[0]
                         crosscor_r = request[1]
-                        response = self.handle_real_robot_request(crosscor_l, crosscor_r)
+                        sig_l = request[2]
+                        sig_r = request[3]
+                        response = self.handle_real_robot_request(crosscor_l, crosscor_r, sig_l, sig_r)
+                    elif isinstance(request, list) and len(request) == 2:
+                        # 旧形式（後方互換性）: [[crosscor_l], [crosscor_r]]
+                        crosscor_l = request[0]
+                        crosscor_r = request[1]
+                        response = self.handle_real_robot_request(crosscor_l, crosscor_r, None, None)
                     else:
                         # 不明な形式
-                        raise ValueError(f"不明なリクエスト形式: {type(request)}")
+                        raise ValueError(f"不明なリクエスト形式: len={len(request) if isinstance(request, list) else 'N/A'}")
 
                     # 応答を送信
                     response_json = json.dumps(response)
