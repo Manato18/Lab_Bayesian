@@ -202,6 +202,68 @@ correlation_sampling_rate = 1000000  # 相互相関のサンプリング周波�
                       # ロボットからの相互相関データのサンプリングレート
 
 # ========================================
+# Negative Evidence パラメータ
+# ========================================
+"""
+【観測なし時の処理方式】
+閾値を超える相関値がなかった場合の処理を制御します。
+
+シナリオ分類:
+  1. 両方観測あり（閾値超え）: 両方で通常のベイズ更新
+  2. 片方だけ観測あり: 観測ありの耳だけで更新、観測なしの耳は更新しない（事前分布を保持）
+  3. 両方観測なし（閾値以下）: Negative Evidenceを適用
+
+従来方式（use_negative_evidence = False）:
+  - フォールバック処理で上位1個を強制取得
+  - 必ず何らかの観測があることになる（シナリオ1に強制変換）
+
+Negative Evidence方式（use_negative_evidence = True）:
+  - フォールバック処理をスキップ
+  - シナリオ2: 片方だけ観測 → その耳だけで更新、もう片方は事前分布を保持
+  - シナリオ3: 両方観測なし → 「観測できたはずなのに検出しなかった」という情報を活用
+
+ベイズ統計学の観点:
+  - negative evidence（否定的証拠）: 「何も見えなかった」という事実自体が情報
+  - P(障害物あり | 両方観測なし) は低いはず
+  - observable領域（confidenceが高い領域）の確率を下げる
+"""
+
+use_negative_evidence = False  # True: negative evidence適用, False: フォールバック処理
+                               # 使用: control_pc.py, bayesian.py
+
+confidence_threshold = 0.3     # observableとunobservableの境界閾値
+                               # 使用: bayesian.py
+                               # この値以上のconfidenceを持つ領域は「観測できたはず」
+
+negative_evidence_value = 0.0001  # observable領域での尤度値（両方観測なし時）
+                                  # 使用: bayesian.py
+                                  # 「見えるはずなのに見えなかった」= 障害物がない可能性が高い
+
+unobservable_value = 1.0       # unobservable領域での尤度値（両方観測なし時）
+                               # 使用: bayesian.py
+                               #
+                               # 【重要】正規化によって最大値が基準点（dB=0）になります：
+                               #
+                               # ケース1: unobservable_value = 1.0（推奨設定）
+                               #   - unobservable領域の値（1.0）が最大
+                               #   - 正規化後: unobservable領域 = 1.0（基準点）
+                               #   - 正規化後: observable領域 = 0.0001 / 1.0 = 0.0001
+                               #   - dB変換: observable領域 = -4（確率が下がる）
+                               #   - dB変換: unobservable領域 = 0（変化なし）
+                               #   → observable領域の確率を下げる（理論的に正しい）
+                               #
+                               # ケース2: unobservable_value = 0.1**20（実験設定）
+                               #   - observable領域の値（0.0001）が最大
+                               #   - 正規化後: observable領域 = 1.0（基準点）
+                               #   - 正規化後: unobservable領域 = 10^-20 / 0.0001 = 10^-16
+                               #   - dB変換: observable領域 = 0（変化なし）
+                               #   - dB変換: unobservable領域 = -16（確率が下がる）
+                               #   → unobservable領域も含めて確率を下げる（実験的）
+                               #
+                               # 推奨: 1.0（観測できない場所は情報なし）
+                               # 実験用: 0.1**20（全空間の確率を下げる）
+
+# ========================================
 # 可視化パラメータ (Visualization Parameters)
 # ========================================
 

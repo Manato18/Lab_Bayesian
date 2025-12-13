@@ -5,6 +5,7 @@ import os
 
 # 設定ファイルから必要なパラメータをインポート
 from bayes_code.config import x_max, y_max, margin_space, h, world_wall_pos
+from bayes_code import config
 
 class Bayesian:
     def __init__(self, sigma2, min_p, c):
@@ -226,19 +227,62 @@ class Bayesian:
 
     def update_belief(self, step_idx, y_el, y_er, current_obs_goback_dist_matrix_L, current_obs_goback_dist_matrix_R, current_confidence_matrix):
         ## ベイズ更新の実行
-        # 尤度関数の計算
-        Pyn_x_L_each = self.new_likelyhood_2D(
-            y_el[0][~np.isnan(y_el[0])],
-            current_obs_goback_dist_matrix_L[0],  # 2次元
-            self.sigma2
-        ).transpose(2, 0, 1)
-        Pyn_x_R_each = self.new_likelyhood_2D(
-            y_er[0][~np.isnan(y_er[0])],
-            current_obs_goback_dist_matrix_R[0],  # 2次元
-            self.sigma2
-        ).transpose(2, 0, 1)
-        self.Pyn_x_L_current = np.clip(np.sum(Pyn_x_L_each, axis=0), 0.1**20, None)
-        self.Pyn_x_R_current = np.clip(np.sum(Pyn_x_R_each, axis=0), 0.1**20, None)
+
+        # 観測の有無をチェック
+        has_observation_L = len(y_el[0][~np.isnan(y_el[0])]) > 0
+        has_observation_R = len(y_er[0][~np.isnan(y_er[0])]) > 0
+
+        # 左耳の尤度計算
+        if has_observation_L:
+            # 通常の尤度計算
+            Pyn_x_L_each = self.new_likelyhood_2D(
+                y_el[0][~np.isnan(y_el[0])],
+                current_obs_goback_dist_matrix_L[0],
+                self.sigma2
+            ).transpose(2, 0, 1)
+            self.Pyn_x_L_current = np.clip(np.sum(Pyn_x_L_each, axis=0), 0.1**20, None)
+        else:
+            # 観測なし時の処理
+            if config.use_negative_evidence and not has_observation_R:
+                # シナリオ3: 両方観測なし → Negative Evidenceを適用
+                observable_mask = current_confidence_matrix[0] > config.confidence_threshold
+                self.Pyn_x_L_current = np.where(
+                    observable_mask,
+                    config.negative_evidence_value,  # observable領域: 低い値
+                    config.unobservable_value         # unobservable領域
+                )
+                print(f"  [尤度計算] 左耳: Negative Evidence適用（両方観測なし） (observable={np.sum(observable_mask)}点)")
+            else:
+                # シナリオ2: 片方だけ観測あり、または従来方式 → 全域1.0で更新しない
+                self.Pyn_x_L_current = np.ones_like(current_confidence_matrix[0])
+                if has_observation_R:
+                    print(f"  [尤度計算] 左耳: 観測なし（右耳のみで更新、左耳は更新しない）")
+
+        # 右耳の尤度計算
+        if has_observation_R:
+            # 通常の尤度計算
+            Pyn_x_R_each = self.new_likelyhood_2D(
+                y_er[0][~np.isnan(y_er[0])],
+                current_obs_goback_dist_matrix_R[0],
+                self.sigma2
+            ).transpose(2, 0, 1)
+            self.Pyn_x_R_current = np.clip(np.sum(Pyn_x_R_each, axis=0), 0.1**20, None)
+        else:
+            # 観測なし時の処理
+            if config.use_negative_evidence and not has_observation_L:
+                # シナリオ3: 両方観測なし → Negative Evidenceを適用
+                observable_mask = current_confidence_matrix[0] > config.confidence_threshold
+                self.Pyn_x_R_current = np.where(
+                    observable_mask,
+                    config.negative_evidence_value,  # observable領域: 低い値
+                    config.unobservable_value         # unobservable領域
+                )
+                print(f"  [尤度計算] 右耳: Negative Evidence適用（両方観測なし） (observable={np.sum(observable_mask)}点)")
+            else:
+                # シナリオ2: 片方だけ観測あり、または従来方式 → 全域1.0で更新しない
+                self.Pyn_x_R_current = np.ones_like(current_confidence_matrix[0])
+                if has_observation_L:
+                    print(f"  [尤度計算] 右耳: 観測なし（左耳のみで更新、右耳は更新しない）")
         
         # 同時確率分布の計算
         PxynL_log = self.dB_trans(self.Pyn_x_L_current / np.max(self.Pyn_x_L_current)) + self.Px2L_log
