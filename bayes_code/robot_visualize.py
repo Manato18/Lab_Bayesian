@@ -99,28 +99,40 @@ class BatVisualizer:
         colorbar = plt.colorbar(pcm, ax=ax, orientation="vertical")
         return colorbar
 
-    def plot_elements(self, ax, bat_x, bat_y, body_x, body_y, pulse_x, pulse_y, pole_x, pole_y, obs_x=None, obs_y=None, bat_color='k'):
+    def plot_elements(self, ax, bat_x, bat_y, head_x, head_y, body_x, body_y, pulse_x, pulse_y, pole_x, pole_y, obs_x=None, obs_y=None, bat_color='k'):
         """基本要素のプロット"""
-        # コウモリ、ポール、壁のプロット
-        bat = ax.plot(bat_x, bat_y, f'{bat_color}o', markersize=20, label="bat")[0]
-        pole = ax.plot(pole_x, pole_y, 'ro', markersize=15, markerfacecolor='None', markeredgecolor='r', label="pole")[0]
+        # bodyからheadまでの距離を計算（半径として使用）
+        radius = np.sqrt((head_x - bat_x)**2 + (head_y - bat_y)**2)
 
-        # 方向線を短くする（元の長さの1/3に）
-        # 体の方向（赤線）
-        body_dir_x = body_x - bat_x
-        body_dir_y = body_y - bat_y
+        # ロボットを円として描画（bodyを中心、bodyからheadまでの距離を半径）
+        circle = plt.Circle((bat_x, bat_y), radius, color=bat_color, fill=False, linewidth=2, label="bat")
+        ax.add_patch(circle)
+
+        # 障害物（ポール）を半径5cm（0.05m）の円としてプロット
+        pole_radius = 0.05  # 5cm = 0.05m
+        pole_circles = []
+        for i, (px, py) in enumerate(zip(pole_x, pole_y)):
+            pole_circle = plt.Circle((px, py), pole_radius, color='r', fill=False, linewidth=2,
+                                    label="pole" if i == 0 else "")
+            ax.add_patch(pole_circle)
+            pole_circles.append(pole_circle)
+
+        # 方向線をheadから伸ばす（元の長さの1/3に）
+        # 体の方向（赤線）- headから始まる
+        body_dir_x = body_x - head_x
+        body_dir_y = body_y - head_y
         body_length = np.sqrt(body_dir_x**2 + body_dir_y**2)
-        body_dir_x_short = bat_x + (body_dir_x / body_length) * (body_length / 3)
-        body_dir_y_short = bat_y + (body_dir_y / body_length) * (body_length / 3)
-        fd = ax.plot(np.array([bat_x, body_dir_x_short]), np.array([bat_y, body_dir_y_short]), 'r-', markersize=5, label="fd")[0]
+        body_dir_x_short = head_x + (body_dir_x / body_length) * (body_length / 3)
+        body_dir_y_short = head_y + (body_dir_y / body_length) * (body_length / 3)
+        fd = ax.plot(np.array([head_x, body_dir_x_short]), np.array([head_y, body_dir_y_short]), 'r-', linewidth=2, label="fd")[0]
 
-        # パルス方向（黒線）
-        pulse_dir_x = pulse_x - bat_x
-        pulse_dir_y = pulse_y - bat_y
+        # パルス方向（黄線）- headから始まる
+        pulse_dir_x = pulse_x - head_x
+        pulse_dir_y = pulse_y - head_y
         pulse_length = np.sqrt(pulse_dir_x**2 + pulse_dir_y**2)
-        pulse_dir_x_short = bat_x + (pulse_dir_x / pulse_length) * (pulse_length / 3)
-        pulse_dir_y_short = bat_y + (pulse_dir_y / pulse_length) * (pulse_length / 3)
-        pd = ax.plot(np.array([bat_x, pulse_dir_x_short]), np.array([bat_y, pulse_dir_y_short]), 'y-', markersize=5, label="pd")[0]
+        pulse_dir_x_short = head_x + (pulse_dir_x / pulse_length) * (pulse_length / 3)
+        pulse_dir_y_short = head_y + (pulse_dir_y / pulse_length) * (pulse_length / 3)
+        pd = ax.plot(np.array([head_x, pulse_dir_x_short]), np.array([head_y, pulse_dir_y_short]), 'y-', linewidth=2, label="pd")[0]
 
         # 壁のプロット
         wall = ax.plot(self.wall_x_draw, self.wall_y_draw, 'k-', linewidth=2, label="wall")[0]
@@ -129,9 +141,9 @@ class BatVisualizer:
         if obs_x is not None and obs_y is not None and len(obs_x) > 0:
             # 複数の物体を検出した場合、全ての物体位置をプロット
             obs_now = ax.plot(obs_x, obs_y, 'm+', markersize=20, markeredgewidth=5, label=r"observation $y$")[0]
-            return bat, pole, fd, pd, wall, obs_now
+            return circle, pole_circles, fd, pd, wall, obs_now
 
-        return bat, pole, fd, pd, wall
+        return circle, pole_circles, fd, pd, wall
 
     def plot_echo_timing(self, ax, t_ax, y_e_vec, label_name):
         """エコー受信タイミングのプロット"""
@@ -214,7 +226,7 @@ class BatVisualizer:
 
 
     def plot_single_step(self, step_idx,
-                        bat_x, bat_y, fd, pd,
+                        bat_x, bat_y, head_x, head_y, fd, pd,
                         pole_x, pole_y,
                         obs_x, obs_y,
                         data1, data2, data3, data4, data5,
@@ -230,7 +242,9 @@ class BatVisualizer:
         step_idx : int
             ステップ番号
         bat_x, bat_y : float
-            ロボットのX, Y位置（スカラー値）
+            ロボットのbody位置（スカラー値）
+        head_x, head_y : float
+            ロボットのhead位置（スカラー値）
         fd : float
             飛行方向（度）
         pd : float
@@ -247,14 +261,14 @@ class BatVisualizer:
             左右のエコーベクトル（1D配列: (len(t_ax),)）
         output_dir : str
             出力ディレクトリ
-        
+
         Returns:
         --------
         str: 保存した画像のパス
         """
         # 出力ディレクトリの確認/作成
         os.makedirs(output_dir, exist_ok=True)
-        
+
         # 方向矢印の終点座標を計算（矢印の長さ = 1m）
         arrow_length = 1.0
         body_x = arrow_length * np.cos(np.deg2rad(fd)) + bat_x
@@ -299,25 +313,25 @@ class BatVisualizer:
         
         # 各パネルに要素をプロット（過去の観測点なし）
         self.plot_elements(
-            ax_y, bat_x, bat_y, body_x, body_y,
+            ax_y, bat_x, bat_y, head_x, head_y, body_x, body_y,
             pulse_x, pulse_y, pole_x, pole_y,
             obs_x, obs_y, bat_color=bat_color
         )
-        
+
         self.plot_elements(
-            ax_y2, bat_x, bat_y, body_x, body_y,
+            ax_y2, bat_x, bat_y, head_x, head_y, body_x, body_y,
             pulse_x, pulse_y, pole_x, pole_y,
             obs_x, obs_y, bat_color=bat_color
         )
-        
+
         self.plot_elements(
-            ax_y3, bat_x, bat_y, body_x, body_y,
+            ax_y3, bat_x, bat_y, head_x, head_y, body_x, body_y,
             pulse_x, pulse_y, pole_x, pole_y,
             obs_x, obs_y, bat_color=bat_color
         )
-        
+
         self.plot_elements(
-            ax_y4, bat_x, bat_y, body_x, body_y,
+            ax_y4, bat_x, bat_y, head_x, head_y, body_x, body_y,
             pulse_x, pulse_y, pole_x, pole_y,
             obs_x, obs_y, bat_color=bat_color
         )

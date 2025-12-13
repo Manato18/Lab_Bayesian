@@ -866,6 +866,8 @@ class ControlPC:
                 step_idx=step,
                 bat_x=current_position['x'],
                 bat_y=current_position['y'],
+                head_x=current_position['head_x'],
+                head_y=current_position['head_y'],
                 fd=current_position['fd'],
                 pd=current_position['pd'],
                 pole_x=self.world.pole_x,
