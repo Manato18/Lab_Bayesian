@@ -228,14 +228,14 @@ Negative Evidence方式（use_negative_evidence = True）:
   - observable領域（confidenceが高い領域）の確率を下げる
 """
 
-use_negative_evidence = False  # True: negative evidence適用, False: フォールバック処理
+use_negative_evidence = True  # True: negative evidence適用, False: フォールバック処理
                                # 使用: control_pc.py, bayesian.py
 
 confidence_threshold = 0.3     # observableとunobservableの境界閾値
                                # 使用: bayesian.py
                                # この値以上のconfidenceを持つ領域は「観測できたはず」
 
-negative_evidence_value = 0.0001  # observable領域での尤度値（両方観測なし時）
+negative_evidence_value = 0.000001  # observable領域での尤度値（両方観測なし時）
                                   # 使用: bayesian.py
                                   # 「見えるはずなのに見えなかった」= 障害物がない可能性が高い
 
@@ -330,7 +330,7 @@ checkpoint_interval = 20          # 保存間隔（ステップ数）
 checkpoint_dir = folder_name + "/checkpoints"  # チェックポイント保存先
                                                 # 使用: control_pc.py, robot_simulator.py
 
-load_checkpoint_path = None       # 読み込むチェックポイントのパス
+load_checkpoint_path = "bayse_olddata2/checkpoints/state_step_0059.npz"       # 読み込むチェックポイントのパス
                                   # 使用: control_pc.py, robot_simulator.py
                                   # None: 新規開始
                                   # 例: "bayse_olddata2/checkpoints/state_step_0160.npz"
