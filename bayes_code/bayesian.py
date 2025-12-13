@@ -43,7 +43,7 @@ class Bayesian:
     def Init(self, world, agent):
 
         # 初期事前確率分布
-        print("prior initialization...")
+        print("事前確率分布を初期化中...")
         self.Px = np.ones((world.Mx + 1, world.My + 1))
         
         # 初期化方法は一旦事前確率分布と同じ
@@ -88,18 +88,10 @@ class Bayesian:
     def calculate_convergence(self):
         """
         事後確率分布から認知収束度合いを計算する（単純に合計値を返す）
-        
+
         Returns:
             float: 認知収束度合いの値（単純な合計値）
-        """        
-        # デバッグ情報: Px_yn_conf_log_currentの状態を確認
-        print("\n=== calculate_convergence デバッグ情報 ===")
-        print(f"Px_yn_conf_log_current shape: {self.Px_yn_conf_log_current.shape}")
-        print(f"Px_yn_conf_log_current contains NaN: {np.isnan(self.Px_yn_conf_log_current).any()}")
-        if np.isnan(self.Px_yn_conf_log_current).any():
-            nan_count = np.isnan(self.Px_yn_conf_log_current).sum()
-            print(f"NaN count in Px_yn_conf_log_current: {nan_count}")
-        
+        """
         # 壁の座標を設定
         wall_x = np.array([margin_space, x_max - margin_space])
         wall_y = np.array([margin_space, y_max - margin_space])
@@ -112,54 +104,37 @@ class Bayesian:
         max_x = np.max(wall_corner_x)
         min_y = np.min(wall_corner_y)
         max_y = np.max(wall_corner_y)
-        print(f"min_x: {min_x}, max_x: {max_x}, min_y: {min_y}, max_y: {max_y}")
 
         # 座標とインデックスの対応: h = 0.01なので、座標値 / h = インデックス
         min_idx_x = int(min_x / h)
         max_idx_x = int(max_x / h)
         min_idx_y = int(min_y / h)
         max_idx_y = int(max_y / h)
-        print(f"min_idx_x: {min_idx_x}, max_idx_x: {max_idx_x}, min_idx_y: {min_idx_y}, max_idx_y: {max_idx_y}")
 
-        # nanで足し算できないそうなので0に置き換える
         # インデックスの範囲チェック
         if min_idx_x < 0 or min_idx_y < 0 or max_idx_x >= self.Px_yn_conf_log_current.shape[0] or max_idx_y >= self.Px_yn_conf_log_current.shape[1]:
-            print("警告: インデックスが配列の範囲外です")
-            print(f"配列の形状: {self.Px_yn_conf_log_current.shape}")
             # インデックスを配列の範囲内に制限
             min_idx_x = max(0, min_idx_x)
             min_idx_y = max(0, min_idx_y)
             max_idx_x = min(self.Px_yn_conf_log_current.shape[0] - 1, max_idx_x)
             max_idx_y = min(self.Px_yn_conf_log_current.shape[1] - 1, max_idx_y)
-            print(f"修正後: min_idx_x: {min_idx_x}, max_idx_x: {max_idx_x}, min_idx_y: {min_idx_y}, max_idx_y: {max_idx_y}")
 
         try:
             # 壁の内側の領域を抽出
             inner_posterior = self.Px_yn_conf_log_current[min_idx_x:max_idx_x+1, min_idx_y:max_idx_y+1]
-            print(f"inner_posterior shape: {inner_posterior.shape}")
-            print(f"inner_posterior contains NaN: {np.isnan(inner_posterior).any()}")
-            
-            # NaNを含む場合は-100で置き換える
+
+            # NaNを含む場合は0で置き換える
             if np.isnan(inner_posterior).any():
-                print("警告: inner_posteriorにNaNが含まれています。-100で置き換えます。")
                 inner_posterior = np.nan_to_num(inner_posterior, nan=0)
-            
+
             # 単純に合計値を返す
             convergence = np.sum(inner_posterior)
-            print(f"convergence: {convergence}, is NaN: {np.isnan(convergence)}")
-            
-            # 最大最小値を表示
-            if inner_posterior.size > 0:
-                print(f"最大値: {np.max(inner_posterior)}")
-                print(f"最小値: {np.min(inner_posterior)}")
-                print(f"合計値: {convergence}")
-            else:
-                print("警告: inner_posteriorが空です")
+
+            if inner_posterior.size == 0:
                 convergence = -1000  # デフォルト値を設定
-            
+
             return convergence
         except Exception as e:
-            print(f"エラーが発生しました: {e}")
             return -1000  # エラー時のデフォルト値
 
     def init_convergence_csv(self, folder_name, pattern):
@@ -182,11 +157,11 @@ class Bayesian:
             with open(self.convergence_csv_path, 'w', newline='') as csvfile:
                 csv_writer = csv.writer(csvfile)
                 csv_writer.writerow(['Step', 'Convergence_Value'])
-            print(f"認知収束度合いのCSVファイル初期化完了: {self.convergence_csv_path}")
+            print(f"認知収束度合いCSVファイル初期化完了")
             self.convergence_step = 0
             return True
         except Exception as e:
-            print(f"CSVファイル初期化に失敗しました: {e}")
+            print(f"CSVファイル初期化に失敗しました")
             self.convergence_csv_path = None
             return False
 
@@ -251,12 +226,12 @@ class Bayesian:
                     config.negative_evidence_value,  # observable領域: 低い値
                     config.unobservable_value         # unobservable領域
                 )
-                print(f"  [尤度計算] 左耳: Negative Evidence適用（両方観測なし） (observable={np.sum(observable_mask)}点)")
+                print(f"  左耳: Negative Evidence適用（両方観測なし）")
             else:
                 # シナリオ2: 片方だけ観測あり、または従来方式 → 全域1.0で更新しない
                 self.Pyn_x_L_current = np.ones_like(current_confidence_matrix[0])
                 if has_observation_R:
-                    print(f"  [尤度計算] 左耳: 観測なし（右耳のみで更新、左耳は更新しない）")
+                    print(f"  左耳: 観測なし（右耳のみで更新）")
 
         # 右耳の尤度計算
         if has_observation_R:
@@ -277,13 +252,13 @@ class Bayesian:
                     config.negative_evidence_value,  # observable領域: 低い値
                     config.unobservable_value         # unobservable領域
                 )
-                print(f"  [尤度計算] 右耳: Negative Evidence適用（両方観測なし） (observable={np.sum(observable_mask)}点)")
+                print(f"  右耳: Negative Evidence適用（両方観測なし）")
             else:
                 # シナリオ2: 片方だけ観測あり、または従来方式 → 全域1.0で更新しない
                 self.Pyn_x_R_current = np.ones_like(current_confidence_matrix[0])
                 if has_observation_L:
-                    print(f"  [尤度計算] 右耳: 観測なし（左耳のみで更新、右耳は更新しない）")
-        
+                    print(f"  右耳: 観測なし（左耳のみで更新）")
+
         # 同時確率分布の計算
         PxynL_log = self.dB_trans(self.Pyn_x_L_current / np.max(self.Pyn_x_L_current)) + self.Px2L_log
         PxynR_log = self.dB_trans(self.Pyn_x_R_current / np.max(self.Pyn_x_R_current)) + self.Px2R_log
@@ -371,7 +346,7 @@ class Bayesian:
                     csv_writer.writerow([step_idx, convergence_value])
                 self.convergence_step += 1
             except Exception as e:
-                print(f"CSV書き込みエラー: {e}")
+                pass  # エラーは無視
 
         data1 = self.Pyn_x_L_current
         data2 = current_confidence_matrix[0]
@@ -414,9 +389,7 @@ class Bayesian:
             convergence_history=np.array(self.convergence_history),
             step_idx=step_idx
         )
-        print(f"[チェックポイント保存] ステップ {step_idx}: {file_path}")
-        print(f"  - 配列サイズ: {self.Px2L_log.shape}")
-        print(f"  - 収束履歴: {len(self.convergence_history)}個のデータポイント")
+        print(f"チェックポイント保存完了: ステップ {step_idx}")
 
     def load_state(self, file_path):
         """
@@ -445,7 +418,7 @@ class Bayesian:
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"チェックポイントファイルが見つかりません: {file_path}")
 
-        print(f"[チェックポイント読み込み] {file_path}")
+        print(f"チェックポイント読み込み中...")
 
         # numpy形式のファイルを読み込み
         data = np.load(file_path)
@@ -459,13 +432,6 @@ class Bayesian:
         self.convergence_history = list(data['convergence_history'])
         step_idx = int(data['step_idx'])
 
-        print(f"  - 復元完了: ステップ {step_idx} の状態")
-        print(f"  - Px2L_log shape: {self.Px2L_log.shape}")
-        print(f"  - Px2R_log shape: {self.Px2R_log.shape}")
-        print(f"  - Px3L_log shape: {self.Px3L_log.shape}")
-        print(f"  - Px3R_log shape: {self.Px3R_log.shape}")
-        print(f"  - confidence shape: {self.confidence.shape}")
-        print(f"  - 収束履歴: {len(self.convergence_history)}個のデータポイント")
-        print(f"  → 次のステップ {step_idx + 1} から実行を再開します")
+        print(f"チェックポイント復元完了: ステップ {step_idx} → 次のステップ {step_idx + 1} から実行を再開します")
 
         return step_idx

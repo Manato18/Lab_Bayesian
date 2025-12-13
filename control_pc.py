@@ -608,13 +608,10 @@ class ControlPC:
             # bayesianが期待する形状に変換: (1, n)
             y_el = y_el.reshape(1, -1)
             y_er = y_er.reshape(1, -1)
-
-            print(f"  [事後分布計算] エコー時間計算完了: y_el形状={y_el.shape}, y_er形状={y_er.shape}")
         else:
             # 検出がない場合は空の2D配列
             y_el = np.array([[]]).reshape(1, 0)
             y_er = np.array([[]]).reshape(1, 0)
-            print(f"  [事後分布計算] 検出なし: 空の観測データで更新")
 
         # 空間行列を計算（head位置とpd（放射方向）を使用）
         print(f"  [事後分布計算] 空間行列を計算中...")
@@ -740,8 +737,6 @@ class ControlPC:
         # 2次元配列に変換（bayesianが期待する形式: (1, n)）
         y_el = nonzero_times_l.reshape(1, -1) if len(nonzero_times_l) > 0 else np.array([[]]).reshape(1, 0)
         y_er = nonzero_times_r.reshape(1, -1) if len(nonzero_times_r) > 0 else np.array([[]]).reshape(1, 0)
-
-        print(f"  [事後分布計算] エコー時間配列: y_el形状={y_el.shape}, y_er形状={y_er.shape}")
 
         # 空間行列を計算（head位置とpd（放射方向）を使用）
         print(f"  [事後分布計算] 空間行列を計算中...")
@@ -1032,12 +1027,12 @@ class ControlPC:
         if max_r > 0:
             r_corr = r_corr / max_r
 
-        print(f"  [相互相関前処理] 正規化完了: L最大値={max_l:.3f}, R最大値={max_r:.3f}")
+        print(f"  相互相関を正規化中...")
 
         # 直達音を除外（最初のN サンプルをゼロに）
         l_corr[:config.direct_pulse_samples] = 0
         r_corr[:config.direct_pulse_samples] = 0
-        print(f"  [相互相関前処理] 直達音除外完了: 最初の{config.direct_pulse_samples}サンプルをゼロ化")
+        print(f"  直達音を除外中...")
 
         # 直達音除外後のデータを保存（フォールバック用）
         l_corr_after_direct = l_corr.copy()
@@ -1046,7 +1041,7 @@ class ControlPC:
         # 閾値処理（閾値以下をゼロに）
         l_corr[l_corr < config.correlation_threshold] = 0
         r_corr[r_corr < config.correlation_threshold] = 0
-        print(f"  [相互相関前処理] 閾値処理完了: 閾値={config.correlation_threshold}")
+        print(f"  閾値処理中...")
 
         # 閾値以上の時間点を抽出
         nonzero_indices_l = np.where(l_corr > 0)[0]
@@ -1056,17 +1051,16 @@ class ControlPC:
         max_time_samples = int(0.03 * config.correlation_sampling_rate)  # 0.03秒に相当するサンプル数
         nonzero_indices_l = nonzero_indices_l[nonzero_indices_l < max_time_samples]
         nonzero_indices_r = nonzero_indices_r[nonzero_indices_r < max_time_samples]
-        print(f"  [相互相関前処理] 0.03秒以上を除外: L={len(nonzero_indices_l)}個, R={len(nonzero_indices_r)}個")
 
         # 閾値以上が0個の場合の処理
         if len(nonzero_indices_l) == 0:
             if config.use_negative_evidence:
                 # Negative Evidence方式: フォールバック処理をスキップ
-                print(f"  [相互相関前処理] 左耳: 閾値以上が0個（Negative Evidence適用）")
+                print(f"  左耳: Negative Evidence適用")
                 nonzero_indices_l = np.array([])  # 空配列のまま
             else:
                 # 従来方式: フォールバック処理で上位1個を取得
-                print(f"  [相互相関前処理] 左耳: 閾値以上が0個のため、上位1個を取得")
+                print(f"  左耳: フォールバック処理（上位1個を取得）")
                 # 2500サンプル目から0.03秒未満の範囲に制限してから上位1個を取得
                 min_samples = 2500
                 l_corr_limited = l_corr_after_direct[min_samples:max_time_samples].copy()
@@ -1077,16 +1071,15 @@ class ControlPC:
                 top_indices_l = top_indices_limited + min_samples
                 # 値が0より大きいもののみ使用
                 nonzero_indices_l = top_indices_l[l_corr_after_direct[top_indices_l] > 0]
-                print(f"  [相互相関前処理] 左耳: 上位{len(nonzero_indices_l)}個を取得（2500サンプル目以降、0.03秒未満の範囲から）")
 
         if len(nonzero_indices_r) == 0:
             if config.use_negative_evidence:
                 # Negative Evidence方式: フォールバック処理をスキップ
-                print(f"  [相互相関前処理] 右耳: 閾値以上が0個（Negative Evidence適用）")
+                print(f"  右耳: Negative Evidence適用")
                 nonzero_indices_r = np.array([])  # 空配列のまま
             else:
                 # 従来方式: フォールバック処理で上位1個を取得
-                print(f"  [相互相関前処理] 右耳: 閾値以上が0個のため、上位1個を取得")
+                print(f"  右耳: フォールバック処理（上位1個を取得）")
                 # 2500サンプル目から0.03秒未満の範囲に制限してから上位1個を取得
                 min_samples = 2500
                 r_corr_limited = r_corr_after_direct[min_samples:max_time_samples].copy()
@@ -1097,19 +1090,12 @@ class ControlPC:
                 top_indices_r = top_indices_limited + min_samples
                 # 値が0より大きいもののみ使用
                 nonzero_indices_r = top_indices_r[r_corr_after_direct[top_indices_r] > 0]
-                print(f"  [相互相関前処理] 右耳: 上位{len(nonzero_indices_r)}個を取得（2500サンプル目以降、0.03秒未満の範囲から）")
 
         # インデックスを時間に変換（サンプル番号 / サンプリング周波数 = 時間[秒]）
         nonzero_times_l = nonzero_indices_l / config.correlation_sampling_rate
         nonzero_times_r = nonzero_indices_r / config.correlation_sampling_rate
 
-        print(f"  [相互相関前処理] 左耳: {len(nonzero_times_l)}個の時間点を抽出")
-        print(f"  [相互相関前処理] 右耳: {len(nonzero_times_r)}個の時間点を抽出")
-
-        if len(nonzero_times_l) > 0:
-            print(f"  [相互相関前処理] 左耳時間範囲: {nonzero_times_l[0]*1000:.2f}ms ~ {nonzero_times_l[-1]*1000:.2f}ms")
-        if len(nonzero_times_r) > 0:
-            print(f"  [相互相関前処理] 右耳時間範囲: {nonzero_times_r[0]*1000:.2f}ms ~ {nonzero_times_r[-1]*1000:.2f}ms")
+        print(f"  時間点抽出完了: 左={len(nonzero_times_l)}個, 右={len(nonzero_times_r)}個")
 
         return nonzero_times_l, nonzero_times_r
 
