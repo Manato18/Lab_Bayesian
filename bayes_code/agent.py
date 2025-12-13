@@ -36,8 +36,18 @@ class Agent:
         self.csv_filename = os.path.join(config.output_dir, 'position_data.csv')
         with open(self.csv_filename, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow(['step', 'position_x', 'position_y', 'head_direction', 'pulse_direction'])
-            
+            writer.writerow(['step', 'position_x', 'position_y', 'head_direction', 'pulse_direction', 'head_x', 'head_y', 'head_z'])
+
+        # コマンドデータ保存用CSVファイルの初期化
+        self.command_csv_filename = os.path.join(config.output_dir, 'command_data.csv')
+        with open(self.command_csv_filename, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(['step', 'NextMove', 'NextAngle', 'PulseDirection', 'move_distance_m', 'avoidance_direction_deg'])
+
+        # 事後分布データ保存用ディレクトリの初期化
+        self.posterior_data_dir = os.path.join(config.output_dir, 'posterior_data')
+        os.makedirs(self.posterior_data_dir, exist_ok=True)
+
         # 前回の回避方向を記録する変数（初期値はNone）
         self.last_avoidance_direction = None
         # 連続回避カウンター

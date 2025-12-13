@@ -102,6 +102,18 @@ class ControlPC:
 
         print("✓ World初期化完了")
 
+        # 障害物データをobj.csvに保存
+        print("障害物データをobj.csvに保存中...")
+        obj_csv_path = os.path.join(config.output_dir, 'obj.csv')
+        os.makedirs(config.output_dir, exist_ok=True)
+        with open(obj_csv_path, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(['pole_x', 'pole_y'])
+            if self.world.pole_x is not None and len(self.world.pole_x) > 0:
+                for px, py in zip(self.world.pole_x, self.world.pole_y):
+                    writer.writerow([px, py])
+        print(f"✓ 障害物データをobj.csvに保存完了: {obj_csv_path}")
+
         # Bayesian初期化
         print("Bayesian初期化中...")
         self.bayesian = Bayesian(
@@ -1124,16 +1136,7 @@ class ControlPC:
             # 新しい位置を内部管理
             self.update_current_position(new_position)
 
-            # 位置情報をCSVに保存
-            with open(self.agent.csv_filename, 'a', newline='') as csvfile:
-                writer = csv.writer(csvfile)
-                writer.writerow([step, new_position['x'], new_position['y'], new_position['fd'], command['pulse_direction']])
-            print(f"  [CSV保存] position_data.csv に位置情報を保存しました")
-
-            # 現在の状態を可視化
-            self.plot_current_state(step, current_position, posterior_data, emergency_avoidance)
-
-            # 実機ロボット形式で応答を作成
+            # 実機ロボット形式で応答を作成（CSV保存の前に計算）
             import datetime
 
             # パルス放射方向を頭部方向からの相対角度に変換
@@ -1148,13 +1151,43 @@ class ControlPC:
             if pulse_relative != pulse_relative_original:
                 print(f"  [警告] パルス放射方向を制限: {pulse_relative_original:.1f}° → {pulse_relative:.1f}°")
 
-            # 符号反転は不要（pd - fdの計算結果が既に正しい符号規則）
-            # 正の値 = 右回転、負の値 = 左回転
-
             # 符号を反転（回避方向と放射方向を逆にする）
             next_angle = -command['avoidance_direction']
             pulse_direction = -pulse_relative
 
+            # 位置情報をCSVに保存
+            with open(self.agent.csv_filename, 'a', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow([step, new_position['x'], new_position['y'], new_position['fd'], command['pulse_direction'],
+                                new_position.get('head_x', 0.0), new_position.get('head_y', 0.0), new_position.get('head_z', 0.0)])
+            print(f"  [CSV保存] position_data.csv に位置情報を保存しました")
+
+            # コマンドデータをCSVに保存
+            with open(self.agent.command_csv_filename, 'a', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                # NextMove(mm), NextAngle(deg), PulseDirection(deg), move_distance_m(m), avoidance_direction_deg(deg)
+                writer.writerow([step, command['move_distance'], next_angle, pulse_direction,
+                                command['move_distance'] / 1000.0, command['avoidance_direction']])
+            print(f"  [CSV保存] command_data.csv にコマンド情報を保存しました")
+
+            # 事後分布データを.npz形式で保存
+            posterior_filename = os.path.join(self.agent.posterior_data_dir, f"step_{step:04d}.npz")
+            np.savez(posterior_filename,
+                    data1=posterior_data['data1'],
+                    data2=posterior_data['data2'],
+                    data3=posterior_data['data3'],
+                    data4=posterior_data['data4'],
+                    data5=posterior_data['data5'],
+                    obs_x=posterior_data['obs_x'],
+                    obs_y=posterior_data['obs_y'],
+                    y_el_vec=posterior_data['y_el_vec'],
+                    y_er_vec=posterior_data['y_er_vec'])
+            print(f"  [NPZ保存] 事後分布データを保存: {posterior_filename}")
+
+            # 現在の状態を可視化
+            self.plot_current_state(step, current_position, posterior_data, emergency_avoidance)
+
+            # 応答を作成
             response = {
                 'Time': datetime.datetime.now().isoformat(),
                 'NextMove': command['move_distance'],  # mmで送信
@@ -1250,8 +1283,32 @@ class ControlPC:
             # 位置情報をCSVに保存
             with open(self.agent.csv_filename, 'a', newline='') as csvfile:
                 writer = csv.writer(csvfile)
-                writer.writerow([step, new_position['x'], new_position['y'], new_position['fd'], command['pulse_direction']])
+                writer.writerow([step, new_position['x'], new_position['y'], new_position['fd'], command['pulse_direction'],
+                                new_position.get('head_x', 0.0), new_position.get('head_y', 0.0), new_position.get('head_z', 0.0)])
             print(f"  [CSV保存] position_data.csv に位置情報を保存しました")
+
+            # コマンドデータをCSVに保存
+            with open(self.agent.command_csv_filename, 'a', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                # シミュレーションモードでは NextMove, NextAngle, PulseDirection の計算は行わず、内部値をそのまま保存
+                # NextMove(mm), NextAngle(deg), PulseDirection(deg), move_distance_m(m), avoidance_direction_deg(deg)
+                writer.writerow([step, command['move_distance'], command['avoidance_direction'], 0.0,
+                                command['move_distance'] / 1000.0, command['avoidance_direction']])
+            print(f"  [CSV保存] command_data.csv にコマンド情報を保存しました")
+
+            # 事後分布データを.npz形式で保存
+            posterior_filename = os.path.join(self.agent.posterior_data_dir, f"step_{step:04d}.npz")
+            np.savez(posterior_filename,
+                    data1=posterior_data['data1'],
+                    data2=posterior_data['data2'],
+                    data3=posterior_data['data3'],
+                    data4=posterior_data['data4'],
+                    data5=posterior_data['data5'],
+                    obs_x=posterior_data['obs_x'],
+                    obs_y=posterior_data['obs_y'],
+                    y_el_vec=posterior_data['y_el_vec'],
+                    y_er_vec=posterior_data['y_er_vec'])
+            print(f"  [NPZ保存] 事後分布データを保存: {posterior_filename}")
 
             # 現在の状態を可視化
             self.plot_current_state(step, current_position, posterior_data, emergency_avoidance)
