@@ -379,3 +379,93 @@ class Bayesian:
         data4 = self.Px_yn_conf_log_current
         data5 = self.Pyn_x_R_current
         return data1, data2, data3, data4, data5
+
+    def save_state(self, file_path, step_idx):
+        """
+        ベイズ推定の状態を保存（途中再開用）
+
+        保存するデータ:
+        - Px2L_log, Px2R_log: 基本モデルの事後確率分布（対数スケール）
+        - Px3L_log, Px3R_log: 記憶保持モデルの事後確率分布（対数スケール）
+        - confidence: confidence行列
+        - convergence_history: 認知収束度合いの履歴
+        - step_idx: 現在のステップ番号
+
+        理論的背景:
+        ベイズ推定では、事後確率が次のステップの事前確率になります。
+        これらの状態変数には過去の全観測データの情報が凝縮されているため、
+        これらを保存すれば途中から再開できます（マルコフ性）。
+
+        Args:
+            file_path (str): 保存先のファイルパス（.npz形式を推奨）
+            step_idx (int): 現在のステップ番号
+        """
+        # ディレクトリが存在しない場合は作成
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+        # 圧縮形式でnumpy配列を保存
+        np.savez_compressed(
+            file_path,
+            Px2L_log=self.Px2L_log,
+            Px2R_log=self.Px2R_log,
+            Px3L_log=self.Px3L_log,
+            Px3R_log=self.Px3R_log,
+            confidence=self.confidence,
+            convergence_history=np.array(self.convergence_history),
+            step_idx=step_idx
+        )
+        print(f"[チェックポイント保存] ステップ {step_idx}: {file_path}")
+        print(f"  - 配列サイズ: {self.Px2L_log.shape}")
+        print(f"  - 収束履歴: {len(self.convergence_history)}個のデータポイント")
+
+    def load_state(self, file_path):
+        """
+        ベイズ推定の状態を読み込み（途中再開用）
+
+        保存されたチェックポイントから以下のデータを復元:
+        - Px2L_log, Px2R_log: 基本モデルの事後確率分布
+        - Px3L_log, Px3R_log: 記憶保持モデルの事後確率分布
+        - confidence: confidence行列
+        - convergence_history: 認知収束度合いの履歴
+
+        理論的背景:
+        ステップnの事後分布P(x|y₁,...,yₙ)には、過去の全観測データの情報が
+        内包されています。したがって、この分布さえあればステップn+1以降の
+        計算を継続できます。これがベイズ推定における十分統計量の性質です。
+
+        Args:
+            file_path (str): 読み込むチェックポイントファイルのパス
+
+        Returns:
+            int: 保存時のステップ番号（次のステップはstep_idx+1から開始）
+
+        Raises:
+            FileNotFoundError: チェックポイントファイルが存在しない場合
+        """
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"チェックポイントファイルが見つかりません: {file_path}")
+
+        print(f"[チェックポイント読み込み] {file_path}")
+
+        # numpy形式のファイルを読み込み
+        data = np.load(file_path)
+
+        # 状態変数を復元
+        self.Px2L_log = data['Px2L_log']
+        self.Px2R_log = data['Px2R_log']
+        self.Px3L_log = data['Px3L_log']
+        self.Px3R_log = data['Px3R_log']
+        self.confidence = data['confidence']
+        self.convergence_history = list(data['convergence_history'])
+        step_idx = int(data['step_idx'])
+
+        print(f"  - 復元完了: ステップ {step_idx} の状態")
+        print(f"  - Px2L_log shape: {self.Px2L_log.shape}")
+        print(f"  - Px2R_log shape: {self.Px2R_log.shape}")
+        print(f"  - Px3L_log shape: {self.Px3L_log.shape}")
+        print(f"  - Px3R_log shape: {self.Px3R_log.shape}")
+        print(f"  - confidence shape: {self.confidence.shape}")
+        print(f"  - 収束履歴: {len(self.convergence_history)}個のデータポイント")
+        print(f"  → 次のステップ {step_idx + 1} から実行を再開します")
+
+        return step_idx

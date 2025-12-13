@@ -178,6 +178,23 @@ class ControlPC:
         self.bayesian.Init(self.world, self.agent)
         print("✓ Bayesian事後分布初期化完了")
 
+        # チェックポイントから状態を復元（途中再開）
+        self.start_step = 0
+        if config.load_checkpoint_path is not None:
+            print("=" * 60)
+            print("チェックポイントから状態を復元中...")
+            try:
+                self.start_step = self.bayesian.load_state(config.load_checkpoint_path)
+                self.start_step += 1  # 次のステップから開始
+                print(f"✓ チェックポイント復元完了: ステップ {self.start_step} から実行")
+            except FileNotFoundError as e:
+                print(f"エラー: {e}")
+                print("新規開始（ステップ0から）に切り替えます")
+                self.start_step = 0
+            print("=" * 60)
+        else:
+            print("新規開始: ステップ0から実行")
+
         # 認知収束度合いのCSVファイルを初期化
         print("認知収束度合いCSV初期化中...")
         pattern = "real_robot"  # 実機ロボット用のパターン名
@@ -665,6 +682,11 @@ class ControlPC:
             obs_x_array = np.array([])
             obs_y_array = np.array([])
 
+        # チェックポイント保存（途中再開用）
+        if config.enable_state_checkpoint and (step + 1) % config.checkpoint_interval == 0:
+            checkpoint_file = os.path.join(config.checkpoint_dir, f"state_step_{step:04d}.npz")
+            self.bayesian.save_state(checkpoint_file, step)
+
         # 可視化に必要なデータを返す
         return {
             'data1': data1,
@@ -774,6 +796,11 @@ class ControlPC:
             for tr in y_er[0]:
                 time_idx_R = np.argmin(np.abs(self.world.t_ax - tr))
                 y_er_vec[time_idx_R] = 1.0
+
+        # チェックポイント保存（途中再開用）
+        if config.enable_state_checkpoint and (step + 1) % config.checkpoint_interval == 0:
+            checkpoint_file = os.path.join(config.checkpoint_dir, f"state_step_{step:04d}.npz")
+            self.bayesian.save_state(checkpoint_file, step)
 
         # 可視化に必要なデータを返す
         return {

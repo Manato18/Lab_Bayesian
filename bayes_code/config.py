@@ -288,6 +288,54 @@ output_dir_movie_posterior = output_dir + "/movie/事後分布"  # 事後分布�
                       # 使用: agent.py
 
 # ========================================
+# チェックポイント設定 (Checkpoint Settings)
+# ========================================
+"""
+【途中再開機能】
+ベイズ推定の状態を定期的に保存し、途中から再開できるようにします。
+
+理論的背景:
+  - ベイズ推定は逐次更新: 事後確率 → 次の事前確率
+  - マルコフ性: 現在の事後分布に全情報が凝縮
+  - 十分統計量: 過去の観測データは不要
+
+保存されるデータ:
+  - Px2L_log, Px2R_log: 基本モデルの事後確率分布
+  - Px3L_log, Px3R_log: 記憶保持モデルの事後確率分布
+  - confidence: confidence行列
+  - convergence_history: 認知収束度合いの履歴
+  - step_idx: ステップ番号
+
+使用例:
+  1. 新規開始: load_checkpoint_path = None
+     → 0ステップから開始、20ステップごとに保存
+
+  2. 途中再開（160ステップから）:
+     load_checkpoint_path = "bayse_olddata2/checkpoints/state_step_0160.npz"
+     → 161ステップから再開、180, 200, ...で保存
+
+用途:
+  - 長時間実験の中断・再開
+  - 特定ステップから再実行
+  - デバッグ時に同じ状態から何度も試行
+"""
+
+enable_state_checkpoint = True    # True: チェックポイント保存を有効化
+                                  # 使用: control_pc.py, robot_simulator.py
+
+checkpoint_interval = 20          # 保存間隔（ステップ数）
+                                  # 使用: control_pc.py, robot_simulator.py
+                                  # 20なら20, 40, 60, ...ステップごとに保存
+
+checkpoint_dir = folder_name + "/checkpoints"  # チェックポイント保存先
+                                                # 使用: control_pc.py, robot_simulator.py
+
+load_checkpoint_path = None       # 読み込むチェックポイントのパス
+                                  # 使用: control_pc.py, robot_simulator.py
+                                  # None: 新規開始
+                                  # 例: "bayse_olddata2/checkpoints/state_step_0160.npz"
+
+# ========================================
 # フラグ設定 (Flag Settings)
 # ========================================
 
