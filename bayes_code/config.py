@@ -192,10 +192,10 @@ correlation_threshold = 0.15       # 相互相関の閾値（0〜1の正規化�
                       # この値以上の相関値を持つ時間点を抽出
                       # 推奨値: 0.20〜0.30（高すぎると検出減、低すぎるとノイズ増）
 
-direct_pulse_samples = 1200        # 直達音のサンプル数
+direct_pulse_samples = 581         # 直達音のサンプル数（片道10cm = 往復20cm相当）
                       # 使用: control_pc.py
                       # この範囲の相関データをゼロにして直達音を除外
-                      # 推奨値: 1000〜1500（音速と最短距離に依存）
+                      # 計算: 0.2m ÷ 344m/s × 1MHz = 581サンプル（温度21℃）
 
 correlation_sampling_rate = 1000000  # 相互相関のサンプリング周波数 [Hz]
                       # 使用: control_pc.py
