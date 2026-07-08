@@ -4,15 +4,16 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.special import jv
 
-# 設定ファイルから全パラメータをインポート
+# 設定ファイルから必要なパラメータをインポート
+# （x_max / y_max / Mt / t_max は calc.py では未使用のため import しない）
 from bayes_code.config import (
-    h, freq, c, a, ear_dist, dt, t_max, Mt, t_ax, eps_y,
-    trials, x_max, y_max, Mx, My,
+    h, freq, c, a, ear_dist, dt, t_ax, eps_y,
+    trials, Mx, My,
     threshold, grad, k_r_noise, k_theta_noise,
     world_pole_wall, world_wall_pos
 )
 
-@dataclass
+@dataclass(eq=False)  # ndarray フィールドを持つため == 比較は不可(eq=False で明示)
 class SensingResult:
     """1 ステップのセンシング計算 calc() の出力をまとめた構造体。
 
@@ -20,16 +21,20 @@ class SensingResult:
     意味のある名前を付けて可読性を上げたもの（各値の中身は従来と同一）。
 
     フィールドと従来の対応:
-        r_noise            : 検知判定後の障害物距離 [m]（旧 r_true。
+        r_detected         : 検知判定後の障害物距離 [m]（旧タプル1番目。旧名 r_true /
+                             呼び出し側では r_noise という別名で受けていた。
+                             calc() 内のノイズ幅ローカル変数 r_noise とは別物なので
+                             紛らわしさ回避のため r_detected に改名した。
                              呼び出し側で ×1000 して mm に変換して使う）
-        theta_noise        : 角度ノイズ場 [rad]（呼び出し側で deg に変換して使う）
+        theta_noise        : 角度ノイズ幅の場 [rad]（ノイズ付き角度そのものではない。
+                             呼び出し側で deg に変換して使う）
         y_el, y_er         : ノイズ付き左右耳のエコー到達時間 [s]（ベイズ更新の観測値）
         y_x, y_y           : 観測点の座標 [m]（可視化のマーカー用）
         y_el_vec, y_er_vec : 左右エコーの時間軸ベクトル（可視化のエコー波形用）
         goback_dist_matrix_L / _R : 空間全体の往復距離行列（左/右）。ベイズ更新の尤度計算に使う
         confidence_matrix  : 空間全体の confidence 行列（記憶保持モデルの重み）
     """
-    r_noise: np.ndarray
+    r_detected: np.ndarray
     theta_noise: np.ndarray
     y_el: np.ndarray
     y_er: np.ndarray
@@ -431,7 +436,6 @@ def r_theta_matrix(bx_vec, by_vec, space_x, space_y, pd_vec):
             - r_2vec: コウモリから空間内の各点までの距離の3次元配列 (trials, Mx+1, My+1)
             - theta_2vec_pipi: コウモリのパルス方向から見た空間内の各点の角度の3次元配列（-π～πの範囲に正規化済み）
     """
-    
     # 結果を格納するゼロ配列を初期化
     # trials: センシング形時数、Mx+1, My+1: 空間格子点の数
     r_2vec = np.zeros((trials, Mx + 1, My + 1))  # 距離格納用
@@ -488,7 +492,6 @@ def real_dist_goback_matrix(speaker_x, speaker_y, ear_x, ear_y, space_x, space_y
         Returns:
             ndarray: 距離の3次元配列 (trials, Mx+1, My+1)
         """
-        
         # 結果を格納するゼロ配列を初期化
         dist = np.zeros((trials, Mx + 1, My + 1))
         
@@ -667,9 +670,9 @@ def calc(world, current_bat_x, current_bat_y, current_fd, current_pd, X, Y):
     current_confidence_matrix = sigmoid(current_attenuation_matrix, threshold, grad)
 
     # 従来 11 個のタプルで返していた値を SensingResult にまとめる。
-    # r_noise=r_true は従来コードのまま（呼び出し側で ×1000 して mm 距離として使う）。
+    # r_detected=r_true は従来コードのまま（呼び出し側で ×1000 して mm 距離として使う）。
     return SensingResult(
-        r_noise=r_true,
+        r_detected=r_true,
         theta_noise=theta_noise,
         y_el=y_el,
         y_er=y_er,

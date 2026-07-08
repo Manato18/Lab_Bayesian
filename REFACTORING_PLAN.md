@@ -41,20 +41,44 @@
 - [x] ベースライン保存・再現性確認（全7項目一致、EXIT=0）
 - [x] 計画書作成
 
-### Phase 1: `calc.py` の整理
-- [ ] `SensingResult`（dataclass）で11タプル返しを置換、障害物レイアウト抽出、セクション整理
-- [ ] デバッグ print（check0〜25、座標ダンプ等）を削除
-- [ ] 呼び出し側 `agent.do_sensing` を更新
+### Phase 1: `calc.py` の整理 ✅ 完了 (commit 881d004)
+- [x] `SensingResult`（dataclass）で11タプル返しを置換、障害物レイアウト抽出、セクション整理
+- [x] デバッグ print（check0〜25、座標ダンプ等）を削除
+- [x] 呼び出し側 `agent.do_sensing` を更新
+
+### Phase 1.5: 第三者レビュー対応 ✅ 完了
+モデル変更を機に両リポジトリの全差分を批判的レビュー（独立エージェント2本）した結果への対応。
+- [x] ハーネスに本番ラッパー `calculate_avoidance_command` の駆動シナリオCを追加
+      （control_pc のループを模擬。レビュー指摘「本番回避エントリが未カバー」への対応）
+- [x] シナリオを22ステップに延長し、緊急回避(step10-13)と通常回避(step14以降)の
+      **両分岐**をA/C両経路でカバー（旧12ステップでは通常回避分岐が未実行だった）
+- [x] `SensingResult.r_noise` → `r_detected` に改名（ノイズ幅ローカル変数との同名2義解消）
+- [x] `SensingResult` に `eq=False`（ndarray == 比較の footgun 防止）
+- [x] calc.py の未使用 config import（x_max/y_max/Mt/t_max）を削除、孤立空白行を掃除
+- [x] `do_sensing` に返り値契約の docstring を追加（belief は Phase 2 で BeliefSnapshot 化予定と明記）
+- [x] ベースライン再現手順（main worktree からの再生成）をハーネス docstring に文書化
+
+> [!question] 既存挙動の疑義（挙動不変の方針により温存・記録のみ）
+> - `Obj.Deg` に角度ではなく「角度ノイズ幅」が入っている（`do_sensing` の
+>   `Obj(Deg=theta_noise)`）。現状 Newobj は書き込みのみで実害なし
+> - `agent.py` の `_sim_flight2` / `calculate_avoidance_command` 内の `if step >= 6:` は
+>   step>=10 分岐の内側にあり**常に真の死んだ条件**。削除は挙動不変だが、
+>   「step 6〜9 で使う予定だった名残」の可能性があるため削除前にユーザー確認を取る
 
 ### Phase 2: `bayesian.py` の整理
 - [ ] 記号対応表をモジュール docstring に追加
 - [ ] `BeliefSnapshot`（dataclass）で `data1〜4` を置換
 - [ ] `calculate_convergence` のデバッグ print 削除、壁マスクを `_apply_wall_mask()` に分離
-- [ ] 呼び出し側 `agent.do_sensing`（92行）と **`control_pc.py`（569行）** を更新
+- [ ] 呼び出し側 `agent.do_sensing` と **`control_pc.py`（569行）** を更新
+- [ ] control_pc.py:597-606 の可視化用 dict（キー `data1`〜`data4`）は**キー名を温存**し、
+      値の詰め替えだけ BeliefSnapshot 対応にする（可視化消費側への波及を防ぐ）
 
 ### Phase 3: `agent.py` の整理
 - [ ] `_analyze_posterior_for_avoidance` をヘルパー分割（集計/判定/表示）、詳細テーブルは `verbose` 制御
 - [ ] マジックナンバー（移動距離・回避角・危険閾値）を命名定数化
+- [ ] **注意**: `_sim_flight2`（シミュレーション経路）と `calculate_avoidance_command`
+      （本番経路）はロジックがほぼ重複している。分割時に片方だけ直す事故が典型パターン
+      のため、両方をハーネス（シナリオA/C）で守った状態で対称に変更すること
 
 ### Phase 4: 仕上げ
 - [ ] `robot_visualize.py` のタイポ・重複整理（あれば）

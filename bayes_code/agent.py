@@ -70,11 +70,24 @@ class Agent:
         return normalized_angle
     
     def do_sensing(self, world):
+        """1 ステップ分のセンシングとベイズ更新を実行する（シミュレーション経路）。
+
+        実機経路（control_pc.py）では Localizer が観測を生成して update_belief を
+        直接呼ぶため、このメソッドは使われない。
+
+        Returns:
+            tuple: (y_x, y_y, y_el_vec, y_er_vec, belief)
+                - y_x, y_y: 観測点の座標（可視化用）
+                - y_el_vec, y_er_vec: 左右エコーの時間軸ベクトル（可視化用）
+                - belief: update_belief の返り値。
+                  ※ 現状は (data1〜4) の4タプル。Phase 2 で BeliefSnapshot(dataclass)
+                    に置き換わる予定（返り値契約の変更履歴として明記）
+        """
         # calc() は SensingResult（各値の意味は calc.py の定義を参照）を返す
         sensing = calc(world, self.PositionX, self.PositionY, self.fd, self.pd, self.X, self.Y)
 
         # 単位を合わせる（距離: m→mm、角度: rad→deg）
-        r_noise = sensing.r_noise * 1000
+        r_noise = sensing.r_detected * 1000
         theta_noise = sensing.theta_noise * 180 / math.pi
 
         # 障害物情報をObjインスタンスで保持
