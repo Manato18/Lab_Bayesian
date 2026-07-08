@@ -70,11 +70,12 @@ class Agent:
         return normalized_angle
     
     def do_sensing(self, world):
-        r_noise, theta_noise, y_el, y_er, y_x, y_y, y_el_vec, y_er_vec, current_obs_goback_dist_matrix_L, current_obs_goback_dist_matrix_R, current_confidence_matrix = calc(world, self.PositionX, self.PositionY, self.fd, self.pd, self.X, self.Y)
-        
-        # 単位を合わせる
-        r_noise = r_noise * 1000
-        theta_noise = theta_noise * 180 / math.pi
+        # calc() は SensingResult（各値の意味は calc.py の定義を参照）を返す
+        sensing = calc(world, self.PositionX, self.PositionY, self.fd, self.pd, self.X, self.Y)
+
+        # 単位を合わせる（距離: m→mm、角度: rad→deg）
+        r_noise = sensing.r_noise * 1000
+        theta_noise = sensing.theta_noise * 180 / math.pi
 
         # 障害物情報をObjインスタンスで保持
         self.Newobj = []
@@ -88,9 +89,14 @@ class Agent:
                 # スカラー値の場合
                 if not (math.isnan(r_noise) or math.isnan(theta_noise)):
                     self.Newobj.append(Obj(Dis=r_noise, Deg=theta_noise))
-        
-        data1, data2, data3, data4 = self.bayesian.update_belief(self.step_idx, y_el, y_er, current_obs_goback_dist_matrix_L, current_obs_goback_dist_matrix_R, current_confidence_matrix)
-        return y_x, y_y, y_el_vec, y_er_vec, data1, data2, data3, data4
+
+        belief = self.bayesian.update_belief(
+            self.step_idx,
+            sensing.y_el, sensing.y_er,
+            sensing.goback_dist_matrix_L, sensing.goback_dist_matrix_R,
+            sensing.confidence_matrix,
+        )
+        return sensing.y_x, sensing.y_y, sensing.y_el_vec, sensing.y_er_vec, belief
     
     def one_step(self, step_idx, visualizer):
         self.step_idx = step_idx

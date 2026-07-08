@@ -1,4 +1,6 @@
 import copy
+from dataclasses import dataclass
+
 import numpy as np
 from scipy.special import jv
 
@@ -9,6 +11,35 @@ from bayes_code.config import (
     threshold, grad, k_r_noise, k_theta_noise,
     world_pole_wall, world_wall_pos
 )
+
+@dataclass
+class SensingResult:
+    """1 ステップのセンシング計算 calc() の出力をまとめた構造体。
+
+    以前は 11 個のタプルを返しており、呼び出し側で順番に対応を追う必要があった。
+    意味のある名前を付けて可読性を上げたもの（各値の中身は従来と同一）。
+
+    フィールドと従来の対応:
+        r_noise            : 検知判定後の障害物距離 [m]（旧 r_true。
+                             呼び出し側で ×1000 して mm に変換して使う）
+        theta_noise        : 角度ノイズ場 [rad]（呼び出し側で deg に変換して使う）
+        y_el, y_er         : ノイズ付き左右耳のエコー到達時間 [s]（ベイズ更新の観測値）
+        y_x, y_y           : 観測点の座標 [m]（可視化のマーカー用）
+        y_el_vec, y_er_vec : 左右エコーの時間軸ベクトル（可視化のエコー波形用）
+        goback_dist_matrix_L / _R : 空間全体の往復距離行列（左/右）。ベイズ更新の尤度計算に使う
+        confidence_matrix  : 空間全体の confidence 行列（記憶保持モデルの重み）
+    """
+    r_noise: np.ndarray
+    theta_noise: np.ndarray
+    y_el: np.ndarray
+    y_er: np.ndarray
+    y_x: np.ndarray
+    y_y: np.ndarray
+    y_el_vec: np.ndarray
+    y_er_vec: np.ndarray
+    goback_dist_matrix_L: np.ndarray
+    goback_dist_matrix_R: np.ndarray
+    confidence_matrix: np.ndarray
 
 def round_angle(angle_rad_matrix):
     """
@@ -86,11 +117,7 @@ def XY_to_r_theta_calc(bat_x, bat_y, obs_x, obs_y, pd):
     # 結果格納用の配列を初期化
     r_true = np.zeros_like(OX, dtype=float)      # 距離計算用の配列 (12,2) - センシング回数×障害物数
     theta_true = np.zeros_like(OX, dtype=float)  # 角度計算用の配列 (12,2) - 同上
-    
-    # デバッグ情報の出力
-    print("len(OX):", len(OX))      # センシング回数
-    print("len(OX[0]:", len(OX[0])) # 障害物の数
-    
+
     # コウモリから障害物へのベクトル成分を計算
     del_X = OX - BX  # x方向の差分
     del_Y = OY - BY  # y方向の差分
@@ -122,13 +149,9 @@ def dist_attenuation(r):
     Returns:
         ndarray: 距離による減衰係数の配列。値が小さいほど減衰が大きい
     """
-    print("check20")  # デバッグ用出力
-    
     # 基準距離を設定（空間分解能の半分を基準値とする）
     r0 = h / 2  # 基準距離[m] - config.pyのh（空間分解能）の半分
-    
-    print("check21")  # デバッグ用出力
-    
+
     # 音波強度は距離の逆数に比例する（球面波の特性）
     return r0 / r
 
@@ -146,28 +169,19 @@ def direc_attenuation(theta):
     Returns:
         ndarray: 方向による減衰係数の配列。中心（0度）で最大、側面で小さくなる
     """
-    # デバッグ用出力
-    print("check22")
-    
     # 計算の安定性のため、角度を-90度～90度（-π/2～π/2）の範囲に制限
     theta_clip = np.clip(theta, -np.pi / 2, np.pi / 2)
-    
-    print("check23")  # デバッグ用出力
-    
+
     # 波数の計算: k = 2π / 波長, 波長 = 音速 / 周波数
     k = 2 * np.pi * freq / c  # 単位: rad/m
-    
-    print("check24")  # デバッグ用出力
-    
+
     # ピストン音源の指向性関数を計算
     # これは円形音源（コウモリの口）からの音波放射パターンを表す
     # jv(1, x)は1次のベッセル関数
     beam_pattern = abs(
         2 * jv(1, k * a * np.sin(theta_clip)) / (k * a * np.sin(theta_clip))
     )  # ピストンモデル(再度ローブ表現のためにabs必要)
-    
-    print("check25")  # デバッグ用出力
-    
+
     return beam_pattern
 
 def detection_judge(attenuation, trans_info):
@@ -388,8 +402,6 @@ def index_calc(y, attenuation):
         y_array = np.ones(len(t_ax)) * eps_y  # 背景レベル（微小値）で初期化
         y_array[i] = 1  # エコー到達時刻のみ1（スパイク）に設定
     else:  # 複数回のセンシングデータ（配列）の場合
-        print("y_dim = 1,  sensing_length is     :", len(y))  # センシング回数を表示
-        
         # 各センシングごとの時間応答ベクトルを2次元配列として生成
         y_array = np.zeros((len(y), len(t_ax)))  # [センシング回数 x 時間軸長]の2次元配列
         
@@ -399,7 +411,6 @@ def index_calc(y, attenuation):
             y_array[n][i[n][i_over]] = 1  # 該当時間インデックスをスパイク（1）に設定
     
     return i, y_array
-
 
 def r_theta_matrix(bx_vec, by_vec, space_x, space_y, pd_vec):
     """
@@ -420,7 +431,6 @@ def r_theta_matrix(bx_vec, by_vec, space_x, space_y, pd_vec):
             - r_2vec: コウモリから空間内の各点までの距離の3次元配列 (trials, Mx+1, My+1)
             - theta_2vec_pipi: コウモリのパルス方向から見た空間内の各点の角度の3次元配列（-π～πの範囲に正規化済み）
     """
-    print("check0")  # デバッグ用出力
     
     # 結果を格納するゼロ配列を初期化
     # trials: センシング形時数、Mx+1, My+1: 空間格子点の数
@@ -441,15 +451,11 @@ def r_theta_matrix(bx_vec, by_vec, space_x, space_y, pd_vec):
         theta_2vec[i] = np.arctan2(del_y, del_x) - np.deg2rad(pd)
         i = i + 1
 
-    print("check01")  # デバッグ用出力
-    
     # 角度を-π～πの範囲に正規化（第一段階：πより大きい場合は2πを引く）
     theta_2vec_pi = np.where(theta_2vec > np.pi, theta_2vec - 2 * np.pi, theta_2vec)
     # 角度を-π～πの範囲に正規化（第二段階：-πより小さい場合は2πを足す）
     theta_2vec_pipi = np.where(theta_2vec_pi < -np.pi, theta_2vec_pi + 2 * np.pi, theta_2vec_pi)
-    
-    print("check02")  # デバッグ用出力
-    
+
     return r_2vec, theta_2vec_pipi
 
 def real_dist_goback_matrix(speaker_x, speaker_y, ear_x, ear_y, space_x, space_y):
@@ -482,7 +488,6 @@ def real_dist_goback_matrix(speaker_x, speaker_y, ear_x, ear_y, space_x, space_y
         Returns:
             ndarray: 距離の3次元配列 (trials, Mx+1, My+1)
         """
-        print("check10")  # デバッグ用出力
         
         # 結果を格納するゼロ配列を初期化
         dist = np.zeros((trials, Mx + 1, My + 1))
@@ -497,8 +502,6 @@ def real_dist_goback_matrix(speaker_x, speaker_y, ear_x, ear_y, space_x, space_y
             # 距離（ベクトルの大きさ）をピタゴラスの定理で計算
             dist[i] = np.sqrt(del_x**2 + del_y**2)
             i = i + 1
-            
-        print("check11")  # デバッグ用出力
 
         return dist
 
@@ -532,13 +535,17 @@ def sigmoid(x, center, grad):
     # 4を掛けることで、grad=1のときに標準的な勅配になるよう調整されている
     return 1 / (1 + np.exp(-4 * grad * (x - center)))
 
+def _build_obstacle_layout(world, current_bat_x, current_bat_y):
+    """このステップでコウモリが「見る」障害物の座標配列を組み立てる。
 
-def calc(world, current_bat_x, current_bat_y, current_fd, current_pd, X, Y):
+    config のフラグに応じて 3 通りの構成を切り替える:
+      - world_pole_wall / world_wall_pos: ポール座標をそのまま使う
+      - どちらも False: ポール・壁角・壁面反射点をすべて結合する
 
+    Returns:
+        tuple: (current_obs_x, current_obs_y) いずれも形状 (1, 障害物数) の 2 次元配列
     """
-    障害物を周囲に置くように変更する。
-    """
-    # world_pole_wallとworld_wall_posはconfig.pyから読み込まれます
+    # world_pole_wall / world_wall_pos は config.py で一元管理している
     if world_pole_wall:
         current_obs_x = world.pole_x.reshape(1, -1)
         current_obs_y = world.pole_y.reshape(1, -1)
@@ -546,7 +553,6 @@ def calc(world, current_bat_x, current_bat_y, current_fd, current_pd, X, Y):
         current_obs_x = world.pole_x.reshape(1, -1)
         current_obs_y = world.pole_y.reshape(1, -1)
     else:
-        # --- 障害物座標の計算（毎ステップ） ---
         # ポール・壁角
         obs_x = np.hstack((world.pole_x, world.wall_corner_x))
         obs_y = np.hstack((world.pole_y, world.wall_corner_y))
@@ -567,13 +573,29 @@ def calc(world, current_bat_x, current_bat_y, current_fd, current_pd, X, Y):
         # 2次元配列に変換（XY_to_r_theta_calc関数の期待する形式）
         current_obs_x = current_obs_x.reshape(1, -1)  # (1, n_obstacles)
         current_obs_y = current_obs_y.reshape(1, -1)  # (1, n_obstacles)
-        print(f"障害物座標x: {current_obs_x.shape}, {current_obs_x}")
 
+    return current_obs_x, current_obs_y
+
+def calc(world, current_bat_x, current_bat_y, current_fd, current_pd, X, Y):
+    """1 ステップ分のセンシング（エコー生成・ノイズ付与・空間行列計算）を実行する。
+
+    処理の流れ:
+      1. 障害物レイアウトの組み立て（_build_obstacle_layout）
+      2. 真のエコー計算（極座標・減衰・検知判定・厳密往復距離）
+      3. 観測ノイズの付与（現実世界に対応する観測信号を生成）
+      4. 可視化用データ・空間行列の構築
+
+    Returns:
+        SensingResult: 計算結果一式（従来は 11 個のタプルを返していた）
+    """
+    # --- 1. 障害物レイアウトの組み立て ---
+    current_obs_x, current_obs_y = _build_obstacle_layout(world, current_bat_x, current_bat_y)
+
+    # --- 2. 真のエコー計算 ---
     # コウモリの座標も2次元配列に変換
     current_bat_x_2d = np.array([current_bat_x]).reshape(1, 1)  # (1, 1)
     current_bat_y_2d = np.array([current_bat_y]).reshape(1, 1)  # (1, 1)
     current_pd_2d = np.array([current_pd]).reshape(1, 1)  # (1, 1)
-    print(f"コウモリ座標x: {current_bat_x_2d.shape}, {current_bat_x_2d}")
 
     # ターゲット極座標の計算（ステップごと）
     r_true, theta_true = XY_to_r_theta_calc(current_bat_x_2d, current_bat_y_2d, current_obs_x, current_obs_y, current_pd_2d)
@@ -593,6 +615,7 @@ def calc(world, current_bat_x, current_bat_y, current_fd, current_pd, X, Y):
 
     y_el_true, y_er_true = space_echo_translater(obs_goback_dist_L, obs_goback_dist_R)
 
+    # --- 3. 観測ノイズの付与 ---
     # 真の揺らぎの計算（ステップごと）
     r_noise_rate = -20 * np.log10(attenuation_obs) / k_r_noise
     theta_noise_rate = -20 * np.log10(attenuation_obs) / k_theta_noise
@@ -611,8 +634,8 @@ def calc(world, current_bat_x, current_bat_y, current_fd, current_pd, X, Y):
     noisy_goback_R = real_dist_goback(current_bat_x, current_bat_y, earR_x, earR_y, noisy_obs_x, noisy_obs_y)
 
     y_el, y_er = space_echo_translater(noisy_goback_L, noisy_goback_R)
-    print(f"ノイズありのエコー到達時間：y_el: {y_el}, y_er: {y_er}")
 
+    # --- 4. 可視化用データ・空間行列の構築 ---
     # 観測点の座標計算（ステップごと）
     if noisy_dist.ndim == 2:
         bat_x_array = np.tile(current_bat_x, (noisy_dist.shape[-1], 1)).T
@@ -643,4 +666,18 @@ def calc(world, current_bat_x, current_bat_y, current_fd, current_pd, X, Y):
     current_attenuation_matrix = dist_attenuation(current_r_2vec) * direc_attenuation(current_theta_2vec_rad)
     current_confidence_matrix = sigmoid(current_attenuation_matrix, threshold, grad)
 
-    return r_true, theta_noise, y_el, y_er, y_x, y_y, y_el_vec, y_er_vec, current_obs_goback_dist_matrix_L, current_obs_goback_dist_matrix_R, current_confidence_matrix
+    # 従来 11 個のタプルで返していた値を SensingResult にまとめる。
+    # r_noise=r_true は従来コードのまま（呼び出し側で ×1000 して mm 距離として使う）。
+    return SensingResult(
+        r_noise=r_true,
+        theta_noise=theta_noise,
+        y_el=y_el,
+        y_er=y_er,
+        y_x=y_x,
+        y_y=y_y,
+        y_el_vec=y_el_vec,
+        y_er_vec=y_er_vec,
+        goback_dist_matrix_L=current_obs_goback_dist_matrix_L,
+        goback_dist_matrix_R=current_obs_goback_dist_matrix_R,
+        confidence_matrix=current_confidence_matrix,
+    )
