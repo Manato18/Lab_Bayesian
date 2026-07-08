@@ -36,3 +36,4 @@ robot_data
 
 # Jupyter
 .ipynb_checkpoints/
+tests/baseline.npz
