@@ -70,8 +70,8 @@ class BatVisualizer:
         # タイトル設定
         ax_y.set_title("likely_hood_newL")
         ax_y2.set_title("confidence_matrix")
-        ax_y3.set_title("posterior(without mmemory)")
-        ax_y4.set_title("posterior(with mmemory)")
+        ax_y3.set_title("posterior(without memory)")
+        ax_y4.set_title("posterior(with memory)")
 
         return fig, (ax_y, ax_y2, ax_y3, ax_y4, ax_py_xL, ax_py_xR)
 
@@ -167,31 +167,13 @@ class BatVisualizer:
         cb3 = self.setup_axes(ax_y3, pcm3)
         cb4 = self.setup_axes(ax_y4, pcm4)
 
-        # 各パネルに要素をプロット
-        self.plot_elements(
-            ax_y, bat_x[frame_idx], bat_y[frame_idx], body_x[frame_idx], body_y[frame_idx],
-            pulse_x[frame_idx], pulse_y[frame_idx], pole_x, pole_y,
-            y_x[frame_idx], y_y[frame_idx]
-        )
-
-        # 他のパネルにも同様の要素をプロット
-        self.plot_elements(
-            ax_y2, bat_x[frame_idx], bat_y[frame_idx], body_x[frame_idx], body_y[frame_idx],
-            pulse_x[frame_idx], pulse_y[frame_idx], pole_x, pole_y,
-            y_x[frame_idx], y_y[frame_idx]
-        )
-
-        self.plot_elements(
-            ax_y3, bat_x[frame_idx], bat_y[frame_idx], body_x[frame_idx], body_y[frame_idx],
-            pulse_x[frame_idx], pulse_y[frame_idx], pole_x, pole_y,
-            y_x[frame_idx], y_y[frame_idx]
-        )
-
-        self.plot_elements(
-            ax_y4, bat_x[frame_idx], bat_y[frame_idx], body_x[frame_idx], body_y[frame_idx],
-            pulse_x[frame_idx], pulse_y[frame_idx], pole_x, pole_y,
-            y_x[frame_idx], y_y[frame_idx]
-        )
+        # 4つの topview パネルすべてに同じ要素（コウモリ・ポール・壁・観測点）を描く
+        for ax in (ax_y, ax_y2, ax_y3, ax_y4):
+            self.plot_elements(
+                ax, bat_x[frame_idx], bat_y[frame_idx], body_x[frame_idx], body_y[frame_idx],
+                pulse_x[frame_idx], pulse_y[frame_idx], pole_x, pole_y,
+                y_x[frame_idx], y_y[frame_idx]
+            )
 
         # エコータイミングのプロット（表示オプションが有効な場合のみ）
         if self.show_echo_plots and ax_py_xL is not None and ax_py_xR is not None:
@@ -292,30 +274,13 @@ class BatVisualizer:
         cb3 = self.setup_axes(ax_y3, pcm3)
         cb4 = self.setup_axes(ax_y4, pcm4)
         
-        # 各パネルに要素をプロット（過去の観測点なし）
-        self.plot_elements(
-            ax_y, bat_x, bat_y, body_x, body_y,
-            pulse_x, pulse_y, pole_x, pole_y,
-            obs_x, obs_y, bat_color=bat_color
-        )
-        
-        self.plot_elements(
-            ax_y2, bat_x, bat_y, body_x, body_y,
-            pulse_x, pulse_y, pole_x, pole_y,
-            obs_x, obs_y, bat_color=bat_color
-        )
-        
-        self.plot_elements(
-            ax_y3, bat_x, bat_y, body_x, body_y,
-            pulse_x, pulse_y, pole_x, pole_y,
-            obs_x, obs_y, bat_color=bat_color
-        )
-        
-        self.plot_elements(
-            ax_y4, bat_x, bat_y, body_x, body_y,
-            pulse_x, pulse_y, pole_x, pole_y,
-            obs_x, obs_y, bat_color=bat_color
-        )
+        # 4つの topview パネルすべてに同じ要素を描く（過去の観測点なし）
+        for ax in (ax_y, ax_y2, ax_y3, ax_y4):
+            self.plot_elements(
+                ax, bat_x, bat_y, body_x, body_y,
+                pulse_x, pulse_y, pole_x, pole_y,
+                obs_x, obs_y, bat_color=bat_color
+            )
         
         # エコータイミングのプロット（表示オプションが有効な場合のみ）
         if self.show_echo_plots and ax_py_xL is not None and ax_py_xR is not None:

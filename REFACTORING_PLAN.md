@@ -1,5 +1,11 @@
 # リファクタリング計画 — 可読性向上（refactor/readability）
 
+> [!success] ✅ 全 Phase 完了（2026-07-09）
+> Phase 0〜4（＋レビュー対応の Phase 1.5）をすべて完了。各 Phase で回帰チェック
+> （シード固定・A/C 2シナリオ・緊急/通常両分岐・全11項目厳密比較）を実行し、
+> **数値経路の挙動不変を確認済み**（デバッグ print の削減により標準出力は変わっている）。
+> ブランチ `refactor/readability`。以下は完了アーカイブとして保持する。
+
 ## 目的
 
 **人が読んでわかりやすいコードにする**こと。アルゴリズム（ベイズ更新・エコー計算・回避ロジック・実機通信）の挙動は一切変えない。既存設計（`bayes_code/` パッケージ構成、control_pc / marker_server / robot_simulator の3プロセス構成、日本語コメント文化）を尊重する。
@@ -84,10 +90,12 @@
       ハーネス（シナリオA/C・全11項目）で両経路の一致を確認
 - [x] 死んだ条件 `if step >= 6:` は温存し、NOTE コメントで [!question] へ誘導
 
-### Phase 4: 仕上げ
-- [ ] `robot_visualize.py` のタイポ・重複整理（あれば）
-- [ ] README 更新（回帰チェック・dataclass・記号対応表への言及）
-- [ ] 最終回帰チェック
+### Phase 4: 仕上げ ✅ 完了
+- [x] `robot_visualize.py` のタイポ修正（mmemory→memory）・4連続 plot_elements のループ化×2箇所
+      （plot_single_step の通常/緊急色の両方をスモークテストで描画確認）
+- [x] README を全面更新（旧READMEは Simulation 時代のコピーで、存在しない main.py を
+      説明していた。実際の3プロセス構成・bayes_code・実機なし実行手順・回帰チェックを記載）
+- [x] 最終回帰チェック合格（A/C 全11項目一致、EXIT=0）
 
 ## 進め方
 

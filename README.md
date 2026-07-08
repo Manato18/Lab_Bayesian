@@ -1,124 +1,77 @@
-# コウモリのエコロケーション（反響定位）ベイジアンシミュレーション
+# コウモリ型ロボットのベイズ推論制御システム
 
-## ファイル構成と関連性
+コウモリのエコロケーション（超音波反響定位）を模した自律ロボット制御の実機システム。
+制御PC がベイズ推論で障害物の存在確率マップ（信念分布）を更新しながら、
+実機ロボット（Golang / Raspberry Pi）へ回避方向・移動距離の指令を送る。
 
-### main.py
+姉妹リポジトリ [Lab_Bayesian_Simulation](https://github.com/Manato18/Lab_Bayesian_Simulation)
+（純シミュレーション版）を実機向けに発展させたもの。
 
-プログラムのエントリーポイントです。以下のクラスをインスタンス化し、シミュレーションを実行します：
+## システム構成（3プロセス）
 
-- `World`クラス：環境設定（壁、障害物など）
-- `Bayesian`クラス：ベイズ推論の実装
-- `Agent`クラス：コウモリの動作と状態管理
-- `BatVisualizer`クラス：シミュレーション結果の可視化
-
-実行フローは以下の通りです：
-1. 各クラスの初期化
-2. ステップごとのシミュレーション実行
-3. 結果の可視化とGIFアニメーション生成
-
-### world.py
-
-`World`クラスを定義しています。シミュレーション環境の管理を担当します。
-
-**主な機能**：
-- 壁の座標設定と管理
-- 障害物（ポール）の座標読み込みと管理
-- 環境の境界設定
-
-**主なメソッド**：
-- `__init__`：環境パラメータの初期化
-- `_setup_walls`：壁の座標を設定
-- `_real_obs`：CSVファイルから障害物の位置データを読み込み
-
-### agent.py
-
-`Agent`クラスを定義しています。コウモリの動作と状態を管理します。
-
-**主な機能**：
-- コウモリの位置と方向の管理
-- 実験データからの飛行経路読み込み
-- 各ステップでのシミュレーション実行
-
-**主なメソッド**：
-- `__init__`：コウモリの初期状態設定
-- `one_step`：1ステップのシミュレーション実行
-- `_real_flight`：実験データからコウモリの飛行経路情報を読み込み
-
-### bayesian.py
-
-`Bayesian`クラスを定義しています。ベイズ推論によるマップ更新を担当します。
-
-**主な機能**：
-- 事前確率分布の管理
-- 尤度計算
-- ベイズ更新による事後確率計算
-
-**主なメソッド**：
-- `__init__`：ベイズ推論パラメータの初期化
-- `Init`：事前確率分布の初期化
-- `dB_trans`：データをデシベルスケールに変換
-- `new_likelyhood_2D`：2次元空間上の尤度計算
-- `update_belief`：ベイズ更新による信念（確率分布）の更新
-
-### calc.py
-
-シミュレーションに必要な様々な計算関数を提供します。
-
-**主な機能**：
-- 座標変換（デカルト座標⇔極座標）
-- 音波の減衰計算
-- エコー検出判定
-- 超音波の往復距離計算
-
-**主な関数**：
-- `round_angle`：角度の正規化
-- `XY_to_r_theta_calc`：デカルト座標から極座標への変換
-- `dist_attenuation`：距離による音波減衰計算
-- `direc_attenuation`：方向による音波減衰計算
-- `real_dist_goback`：超音波の往復距離計算
-- `calc`：メインの計算関数（各ステップでの計算を統合）
-
-### visualize.py
-
-`BatVisualizer`クラスを定義しています。シミュレーション結果の可視化を担当します。
-
-**主な機能**：
-- シミュレーション状態のプロット
-- フレームごとの画像生成
-- GIFアニメーション作成
-
-**主なメソッド**：
-- `__init__`：可視化パラメータの初期化
-- `plot_frame`：単一フレームのプロットと保存
-- `create_gif_from_frames`：フレーム画像からGIFアニメーション作成
-
-## データフロー
-
-1. `World`クラスが環境（壁と障害物）を初期化
-2. `Agent`クラスがコウモリの初期位置と飛行経路を設定
-3. `Bayesian`クラスが事前確率分布を初期化
-4. 各ステップで以下が実行されます：
-   - `Agent.one_step`がステップ実行を開始
-   - `calc`関数がエコー信号を計算
-   - `Bayesian.update_belief`がベイズ更新を実行
-   - `BatVisualizer.plot_frame`が結果を可視化
-5. 全ステップ完了後、`BatVisualizer.create_gif_from_frames`がGIFアニメーションを作成
-
-## パラメータの受け渡し
-
-- `World`クラスから`Agent`クラスへ：環境設定（X, Y座標系）、マージン空間
-- `World`クラスから`Bayesian`クラスへ：格子点数、空間サイズ
-- `Agent`クラスから`Bayesian`クラスへ：試行回数
-- `Agent.one_step`から`calc`関数へ：コウモリの位置と方向
-- `calc`関数から`Agent.one_step`へ：エコー信号、観測点座標
-- `Agent.one_step`から`Bayesian.update_belief`へ：エコー信号、距離行列
-- `Bayesian.update_belief`から`Agent.one_step`へ：更新された確率分布
-- `Agent.one_step`から`BatVisualizer.plot_frame`へ：シミュレーション状態データ
-
-## 実行方法
-
-```bash
-python main.py
+```
+┌─────────────────┐  HTTP(6000)  ┌──────────────────┐  TCP(6001)  ┌────────────────────┐
+│ marker_server.py │ ──────────→ │  control_pc.py    │ ←─────────→ │ 実機ロボット(Go)    │
+│ (Motive MoCap    │  位置・障害物 │  (ベイズ推論・     │  相互相関/   │ または             │
+│  データ配信)      │              │   回避計算)       │  移動指令    │ robot_simulator.py │
+└─────────────────┘              └──────────────────┘             └────────────────────┘
 ```
 
-実行すると、シミュレーションが1ステップずつ進行し、各ステップの状態が可視化されます。最終的にGIFアニメーションが生成されます。
+| ファイル | 役割 |
+|---|---|
+| `marker_server.py` | モーションキャプチャ(Motive)のデータ配信サーバー。`--mode test` で実機なしダミー配信 |
+| `control_pc.py` | 本番オーケストレータ。ロボット位置取得 → Localizer で物体定位 → ベイズ更新 → 移動指令 |
+| `robot_simulator.py` | 実機ロボット(Golang)の模擬クライアント。実機なしで end-to-end 検証する用 |
+| `marker_test.py` | marker_server の配信データ確認ツール |
+
+実機での起動手順は [ロボットベイズ実行時メモ.md](./ロボットベイズ実行時メモ.md)、
+マーカー仕様は [marker.md](./marker.md) を参照。
+
+## bayes_code/ パッケージ
+
+| ファイル | 役割 |
+|---|---|
+| `config.py` | 全パラメータの一元管理（物理定数・空間設定・検出閾値・フラグ） |
+| `world.py` | 環境（壁・障害物座標）の管理。障害物は marker_server から取得して上書きされる |
+| `bayesian.py` | ベイズ更新。`update_belief` は `BeliefSnapshot`（dataclass）を返す。冒頭に**記号対応表**（`Px2L_log` 等の読み方）あり |
+| `calc.py` | エコー生成・減衰・座標変換などの計算関数群。`calc()` は `SensingResult`（dataclass）を返す |
+| `agent.py` | 回避ロジック。`calculate_avoidance_command`（本番経路・control_pc から呼ばれる）と `_sim_flight2`（シミュレーション経路）が共通の分析 `_analyze_posterior_for_avoidance` を使う。回避チューニング定数はファイル冒頭に集約 |
+| `localization.py` | `Localizer`: 左右マイクの相互相関データからピーク検出し距離・角度を定位（実機観測の入口） |
+| `robot_visualize.py` | 単一ステップの可視化（`plot_single_step`。緊急回避時はロボット色が変わる） |
+
+## 実行方法（実機なしの end-to-end 検証）
+
+依存パッケージは `requirements.txt`。`uv` でプロジェクト隔離の仮想環境を作る。
+
+```bash
+uv venv --python 3.12
+uv pip install -r requirements.txt
+
+# ターミナル1: テストモードの marker_server（Motive 不要）
+uv run python marker_server.py --mode test --port 6000
+# ターミナル2: 制御PC
+uv run python control_pc.py
+# ターミナル3: ロボット模擬クライアント（20ステップ実行）
+uv run python robot_simulator.py 20
+```
+
+## テスト（回帰チェック）
+
+リファクタリング中に挙動が変わっていないことを保証するため、実機・ソケットなしで
+bayes_code のコア（calc → update_belief → 回避計算）をシード固定で実行し、
+数値状態をベースラインと比較する回帰チェックを用意している。
+
+```bash
+# 基準となる出力を保存（変更前に一度だけ実行）
+uv run python tests/test_regression.py --save-baseline
+# 変更後にベースラインと一致するか確認
+uv run python tests/test_regression.py
+```
+
+シナリオA（`agent.one_step` 経路）とシナリオC（本番ラッパー
+`calculate_avoidance_command` 経路）の両方で、緊急回避・通常回避の両分岐をカバーする。
+
+## リファクタリング記録
+
+可読性向上リファクタリングの方針・各フェーズの記録・既知の疑義（`[!question]`）は
+[REFACTORING_PLAN.md](./REFACTORING_PLAN.md) にまとめている。
