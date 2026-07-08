@@ -1,8 +1,62 @@
+# -*- coding: utf-8 -*-
+"""
+ベイズ更新モジュール (Bayesian belief update)
+=============================================
+エコー観測（実機では Localizer、シミュレーションでは calc()）から、
+空間上の障害物存在確率（信念分布）をベイズ更新で逐次推定する。
+
+--------------------------------------------------------------------
+記号対応表（変数名の読み方）
+--------------------------------------------------------------------
+確率分布の変数は数式に対応した命名になっている。以下の規則で読む:
+
+    P...        確率分布
+    x           空間上の位置（格子点）
+    y_n         n 回目の観測（エコー到達時間）
+    末尾 L / R  左耳 / 右耳
+    末尾 _log   log10 スケール
+    _current    現ステップのみ保持（過去ステップは残さない）
+    中間の 2    基本モデル（confidence 重みなし）
+    中間の 3    記憶保持モデル（confidence で重み付け）
+
+主な状態変数:
+    Px                     初期事前分布（全格子点 1 で初期化）
+    Px2L_log / Px2R_log    基本モデルの事前分布（左/右耳, log）。毎ステップ事後で更新
+    Px3L_log / Px3R_log    記憶保持モデルの事前分布（左/右耳, log）。confidence 重み付き
+    Pyn_x_L_current / _R   現ステップの尤度 P(y_n | x)（左/右耳）
+    Px_ynL_log_current /_R 現ステップの事後 P(x | y_n)（左/右耳, log）
+    Px_yn_log_current      左右統合した事後（記憶なし）
+    Px_yn_conf_log_current 左右統合した事後（記憶あり=記憶保持モデル）
+    confidence             confidence 行列（エコーの信頼度重み）
+--------------------------------------------------------------------
+"""
 import numpy as np
 import copy
+from dataclasses import dataclass
 
 # 設定ファイルから必要なパラメータをインポート
 from bayes_code.config import x_max, y_max, margin_space, h, world_wall_pos
+
+
+@dataclass(eq=False)  # ndarray フィールドを持つため == 比較は不可(eq=False で明示)
+class BeliefSnapshot:
+    """1 ステップのベイズ更新 update_belief() の出力（可視化に渡す 4 つの分布）。
+
+    以前は data1〜data4 の 4 タプルで返しており、どれが何か分かりづらかった。
+    可視化パネルの並び（尤度L / confidence / 事後(記憶なし) / 事後(記憶あり)）に対応する。
+    control_pc.py の可視化用 dict（キー data1〜data4）へはキー名を温存して詰め替える。
+
+    フィールドと従来の対応:
+        likelihood_L          : 左耳の尤度 P(y_n|x)（旧 data1 = Pyn_x_L_current）
+        confidence            : confidence 行列（旧 data2 = confidence_matrix[0]）
+        posterior             : 左右統合した事後・記憶なし（旧 data3 = Px_yn_log_current）
+        posterior_with_memory : 左右統合した事後・記憶保持（旧 data4 = Px_yn_conf_log_current）
+    """
+    likelihood_L: np.ndarray
+    confidence: np.ndarray
+    posterior: np.ndarray
+    posterior_with_memory: np.ndarray
+
 
 class Bayesian:
     def __init__(self, sigma2, min_p, c):
@@ -85,15 +139,7 @@ class Bayesian:
         
         Returns:
             float: 認知収束度合いの値（単純な合計値）
-        """        
-        # デバッグ情報: Px_yn_conf_log_currentの状態を確認
-        print("\n=== calculate_convergence デバッグ情報 ===")
-        print(f"Px_yn_conf_log_current shape: {self.Px_yn_conf_log_current.shape}")
-        print(f"Px_yn_conf_log_current contains NaN: {np.isnan(self.Px_yn_conf_log_current).any()}")
-        if np.isnan(self.Px_yn_conf_log_current).any():
-            nan_count = np.isnan(self.Px_yn_conf_log_current).sum()
-            print(f"NaN count in Px_yn_conf_log_current: {nan_count}")
-        
+        """
         # 壁の座標を設定
         wall_x = np.array([margin_space, x_max - margin_space])
         wall_y = np.array([margin_space, y_max - margin_space])
@@ -106,54 +152,37 @@ class Bayesian:
         max_x = np.max(wall_corner_x)
         min_y = np.min(wall_corner_y)
         max_y = np.max(wall_corner_y)
-        print(f"min_x: {min_x}, max_x: {max_x}, min_y: {min_y}, max_y: {max_y}")
 
-        # 座標とインデックスの対応: h = 0.01なので、座標値 / h = インデックス
+        # 座標とインデックスの対応: 座標値 / h = インデックス
         min_idx_x = int(min_x / h)
         max_idx_x = int(max_x / h)
         min_idx_y = int(min_y / h)
         max_idx_y = int(max_y / h)
-        print(f"min_idx_x: {min_idx_x}, max_idx_x: {max_idx_x}, min_idx_y: {min_idx_y}, max_idx_y: {max_idx_y}")
 
-        # nanで足し算できないそうなので0に置き換える
-        # インデックスの範囲チェック
+        # インデックスが配列の範囲外なら範囲内に制限する
         if min_idx_x < 0 or min_idx_y < 0 or max_idx_x >= self.Px_yn_conf_log_current.shape[0] or max_idx_y >= self.Px_yn_conf_log_current.shape[1]:
-            print("警告: インデックスが配列の範囲外です")
-            print(f"配列の形状: {self.Px_yn_conf_log_current.shape}")
-            # インデックスを配列の範囲内に制限
             min_idx_x = max(0, min_idx_x)
             min_idx_y = max(0, min_idx_y)
             max_idx_x = min(self.Px_yn_conf_log_current.shape[0] - 1, max_idx_x)
             max_idx_y = min(self.Px_yn_conf_log_current.shape[1] - 1, max_idx_y)
-            print(f"修正後: min_idx_x: {min_idx_x}, max_idx_x: {max_idx_x}, min_idx_y: {min_idx_y}, max_idx_y: {max_idx_y}")
 
         try:
             # 壁の内側の領域を抽出
             inner_posterior = self.Px_yn_conf_log_current[min_idx_x:max_idx_x+1, min_idx_y:max_idx_y+1]
-            print(f"inner_posterior shape: {inner_posterior.shape}")
-            print(f"inner_posterior contains NaN: {np.isnan(inner_posterior).any()}")
-            
-            # NaNを含む場合は-100で置き換える
+
+            # NaN は足し算できないので 0 に置き換える
             if np.isnan(inner_posterior).any():
-                print("警告: inner_posteriorにNaNが含まれています。-100で置き換えます。")
                 inner_posterior = np.nan_to_num(inner_posterior, nan=0)
-            
-            # 単純に合計値を返す
-            convergence = np.sum(inner_posterior)
-            print(f"convergence: {convergence}, is NaN: {np.isnan(convergence)}")
-            
-            # 最大最小値を表示
+
+            # 壁の内側の事後確率の合計を収束度合いとして返す
             if inner_posterior.size > 0:
-                print(f"最大値: {np.max(inner_posterior)}")
-                print(f"最小値: {np.min(inner_posterior)}")
-                print(f"合計値: {convergence}")
+                convergence = np.sum(inner_posterior)
             else:
-                print("警告: inner_posteriorが空です")
-                convergence = -1000  # デフォルト値を設定
-            
+                convergence = -1000  # 領域が空のときのデフォルト値
+
             return convergence
         except Exception as e:
-            print(f"エラーが発生しました: {e}")
+            print(f"認知収束度合いの計算でエラーが発生しました: {e}")
             return -1000  # エラー時のデフォルト値
     
     def new_likelyhood_2D(self, tau_n, d, sigma2):
@@ -259,36 +288,41 @@ class Bayesian:
         convergence_value = self.calculate_convergence()
         self.convergence_history.append(convergence_value)
 
-        # world_wall_posはconfig.pyから読み込まれます
+        # 壁の範囲外を認知対象外（-20）にマスクする
         if world_wall_pos:
-            # 壁の範囲外を-20に設定
-            wall_x = np.array([margin_space, x_max - margin_space])
-            wall_y = np.array([margin_space, y_max - margin_space])
-            wall_corner_x, wall_corner_y = np.meshgrid(wall_x, wall_y)
-            wall_corner_x = wall_corner_x.flatten()
-            wall_corner_y = wall_corner_y.flatten()
-            
-            # wall_cornerの範囲を取得
-            min_x = np.min(wall_corner_x)  # 2.0
-            max_x = np.max(wall_corner_x)  # 6.5
-            min_y = np.min(wall_corner_y)  # 2.0
-            max_y = np.max(wall_corner_y)  # 6.5
-            
-            # 座標とインデックスの対応: h = 0.01なので、座標値 / h = インデックス
-            min_idx = int(min_x / h)  # 200
-            max_idx = int(max_x / h)  # 650
-            
-            # 壁の範囲外を-20に設定
-            # 1. x < 2.0 または x > 6.5 の領域
-            self.Px_yn_conf_log_current[:min_idx, :] = -20  # x < 2.0
-            self.Px_yn_conf_log_current[max_idx+1:, :] = -20  # x > 6.5
-            
-            # 2. y < 2.0 または y > 6.5 の領域
-            self.Px_yn_conf_log_current[:, :min_idx] = -20  # y < 2.0
-            self.Px_yn_conf_log_current[:, max_idx+1:] = -20  # y > 6.5
-        
-        data1 = self.Pyn_x_L_current
-        data2 = current_confidence_matrix[0]
-        data3 = self.Px_yn_log_current
-        data4 = self.Px_yn_conf_log_current
-        return data1, data2, data3, data4
+            self._apply_wall_mask(self.Px_yn_conf_log_current)
+
+        # 可視化用の 4 分布を BeliefSnapshot にまとめて返す
+        return BeliefSnapshot(
+            likelihood_L=self.Pyn_x_L_current,
+            confidence=current_confidence_matrix[0],
+            posterior=self.Px_yn_log_current,
+            posterior_with_memory=self.Px_yn_conf_log_current,
+        )
+
+    def _apply_wall_mask(self, posterior):
+        """壁の範囲外の事後確率を -20 に設定する（posterior を破壊的に更新）。
+
+        壁の内側（margin_space 〜 x_max - margin_space）だけを認知対象とし、
+        外側は一律 -20（log スケールでほぼ 0 確率）に落とす。
+        """
+        wall_x = np.array([margin_space, x_max - margin_space])
+        wall_y = np.array([margin_space, y_max - margin_space])
+        wall_corner_x, wall_corner_y = np.meshgrid(wall_x, wall_y)
+        wall_corner_x = wall_corner_x.flatten()
+        wall_corner_y = wall_corner_y.flatten()
+
+        # wall_cornerの範囲を取得
+        min_x = np.min(wall_corner_x)
+        max_x = np.max(wall_corner_x)
+
+        # 座標とインデックスの対応: 座標値 / h = インデックス
+        min_idx = int(min_x / h)
+        max_idx = int(max_x / h)
+
+        # x が範囲外の領域を -20 に
+        posterior[:min_idx, :] = -20
+        posterior[max_idx+1:, :] = -20
+        # y が範囲外の領域を -20 に
+        posterior[:, :min_idx] = -20
+        posterior[:, max_idx+1:] = -20

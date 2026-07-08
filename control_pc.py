@@ -564,9 +564,9 @@ class ControlPC:
 
         print(f"  [事後分布計算] 空間行列計算完了")
 
-        # ベイズ更新（戻り値を受け取る）
+        # ベイズ更新（BeliefSnapshot を受け取る。旧 data1〜4 の対応は bayesian.py 参照）
         print(f"  [事後分布計算] ベイズ更新を実行中...")
-        data1, data2, data3, data4 = self.bayesian.update_belief(
+        belief = self.bayesian.update_belief(
             step, y_el, y_er,
             current_obs_goback_dist_matrix_L,
             current_obs_goback_dist_matrix_R,
@@ -596,11 +596,12 @@ class ControlPC:
             obs_y_mean = current_position['head_y']
         
         # 可視化に必要なデータを返す
+        # （キー名 data1〜data4 は可視化消費側との互換のため温存。中身の対応は bayesian.py 参照）
         return {
-            'data1': data1,
-            'data2': data2,
-            'data3': data3,
-            'data4': data4,
+            'data1': belief.likelihood_L,
+            'data2': belief.confidence,
+            'data3': belief.posterior,
+            'data4': belief.posterior_with_memory,
             'y_el_vec': y_el_vec,
             'y_er_vec': y_er_vec,
             'obs_x': obs_x_mean,

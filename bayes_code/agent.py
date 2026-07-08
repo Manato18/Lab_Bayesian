@@ -79,9 +79,8 @@ class Agent:
             tuple: (y_x, y_y, y_el_vec, y_er_vec, belief)
                 - y_x, y_y: 観測点の座標（可視化用）
                 - y_el_vec, y_er_vec: 左右エコーの時間軸ベクトル（可視化用）
-                - belief: update_belief の返り値。
-                  ※ 現状は (data1〜4) の4タプル。Phase 2 で BeliefSnapshot(dataclass)
-                    に置き換わる予定（返り値契約の変更履歴として明記）
+                - belief: BeliefSnapshot（bayesian.py 参照。旧 data1〜4 の4タプルを
+                  Phase 2 で dataclass 化したもの）
         """
         # calc() は SensingResult（各値の意味は calc.py の定義を参照）を返す
         sensing = calc(world, self.PositionX, self.PositionY, self.fd, self.pd, self.X, self.Y)

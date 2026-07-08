@@ -65,13 +65,14 @@
 >   step>=10 分岐の内側にあり**常に真の死んだ条件**。削除は挙動不変だが、
 >   「step 6〜9 で使う予定だった名残」の可能性があるため削除前にユーザー確認を取る
 
-### Phase 2: `bayesian.py` の整理
-- [ ] 記号対応表をモジュール docstring に追加
-- [ ] `BeliefSnapshot`（dataclass）で `data1〜4` を置換
-- [ ] `calculate_convergence` のデバッグ print 削除、壁マスクを `_apply_wall_mask()` に分離
-- [ ] 呼び出し側 `agent.do_sensing` と **`control_pc.py`（569行）** を更新
-- [ ] control_pc.py:597-606 の可視化用 dict（キー `data1`〜`data4`）は**キー名を温存**し、
-      値の詰め替えだけ BeliefSnapshot 対応にする（可視化消費側への波及を防ぐ）
+### Phase 2: `bayesian.py` の整理 ✅ 完了
+- [x] 記号対応表をモジュール docstring に追加
+- [x] `BeliefSnapshot`（dataclass, eq=False）で `data1〜4` を置換
+- [x] `calculate_convergence` のデバッグ print 削除、壁マスクを `_apply_wall_mask()` に分離
+- [x] 呼び出し側 `agent.do_sensing` と `control_pc.py` を更新
+- [x] control_pc.py の可視化用 dict（キー `data1`〜`data4`）はキー名を温存し、
+      値の詰め替えだけ BeliefSnapshot 対応（可視化消費側への波及なし）
+- [x] 回帰チェック合格（A/C 全11項目一致）＋ control_pc/robot_simulator の import 検証
 
 ### Phase 3: `agent.py` の整理
 - [ ] `_analyze_posterior_for_avoidance` をヘルパー分割（集計/判定/表示）、詳細テーブルは `verbose` 制御
