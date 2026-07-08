@@ -74,12 +74,15 @@
       値の詰め替えだけ BeliefSnapshot 対応（可視化消費側への波及なし）
 - [x] 回帰チェック合格（A/C 全11項目一致）＋ control_pc/robot_simulator の import 検証
 
-### Phase 3: `agent.py` の整理
-- [ ] `_analyze_posterior_for_avoidance` をヘルパー分割（集計/判定/表示）、詳細テーブルは `verbose` 制御
-- [ ] マジックナンバー（移動距離・回避角・危険閾値）を命名定数化
-- [ ] **注意**: `_sim_flight2`（シミュレーション経路）と `calculate_avoidance_command`
-      （本番経路）はロジックがほぼ重複している。分割時に片方だけ直す事故が典型パターン
-      のため、両方をハーネス（シナリオA/C）で守った状態で対称に変更すること
+### Phase 3: `agent.py` の整理 ✅ 完了
+- [x] `_analyze_posterior_for_avoidance` をヘルパー分割（`_aggregate_posterior_by_direction` /
+      `_decide_emergency_avoidance` / `_print_avoidance_table`）、詳細テーブルは `verbose` 制御
+- [x] マジックナンバーを命名定数化（STRAIGHT_STEPS / STEP_DISTANCE(_MM) /
+      INITIAL_PULSE_OFFSET_DEG / PULSE_AVOID_FACTOR / EMERGENCY_AVOID_ANGLE /
+      DANGER_THRESHOLD / DANGER_DISTANCE）。m/mm の二重定義は通信仕様由来である旨をコメント
+- [x] `_sim_flight2` と `calculate_avoidance_command` を**対称に**変更し、
+      ハーネス（シナリオA/C・全11項目）で両経路の一致を確認
+- [x] 死んだ条件 `if step >= 6:` は温存し、NOTE コメントで [!question] へ誘導
 
 ### Phase 4: 仕上げ
 - [ ] `robot_visualize.py` のタイポ・重複整理（あれば）

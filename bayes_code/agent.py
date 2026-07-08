@@ -7,6 +7,22 @@ import csv
 from bayes_code import config
 from bayes_code.calc import calc
 
+# --- 飛行・回避チューニング定数 ---
+# （物理定数ではなく回避アルゴリズム固有の値なので config.py ではなくここに置く。
+#   _sim_flight2（シミュレーション経路）と calculate_avoidance_command（本番経路）の
+#   両方で同じ値を使う。単位が m と mm で分かれているのは通信仕様（ロボットへは mm）のため）
+STRAIGHT_STEPS = 10              # 直線移動する初期ステップ数（この間は回避なし）
+STEP_DISTANCE = 0.15             # 通常時の 1 ステップ移動距離 [m]（シミュレーション経路）
+EMERGENCY_STEP_DISTANCE = 0.05   # 緊急回避時の 1 ステップ移動距離 [m]（慎重に小さく進む）
+STEP_DISTANCE_MM = 150.0         # 通常時の移動指令距離 [mm]（本番経路: ロボットへ送る値）
+EMERGENCY_STEP_DISTANCE_MM = 50.0  # 緊急回避時の移動指令距離 [mm]
+INITIAL_PULSE_OFFSET_DEG = 50.0  # 初期直進フェーズでパルスを進行方向から左にずらす角度 [deg]
+PULSE_AVOID_FACTOR = 1.3         # 回避時のパルス方向オフセット倍率（fd - avoid_angle*1.3）
+EMERGENCY_AVOID_ANGLE = 60       # 緊急回避時の旋回角 [deg]
+DANGER_THRESHOLD = -50           # 危険とみなす事後分布値のしきい値
+DANGER_DISTANCE = 0.4            # 危険判定を行う近距離の上限 [m]
+
+
 class Obj:
     def __init__(self, Dis=None, Deg=None):
         ## Intens of Extract peak (degree of confidence)
@@ -46,6 +62,8 @@ class Agent:
         self.last_avoidance_direction = None
         # 連続回避カウンター
         self.consecutive_avoidance_count = 0
+        # 回避分析の詳細テーブルを標準出力に表示するか（デバッグ用）
+        self.verbose = False
         
         self.trials = sim["trials"]
         self.PositionX = sim["init_pos"][0]
@@ -150,42 +168,45 @@ class Agent:
             fd = self.fd,
         )
 
-        # 最初の10ステップは直線移動（回避なし）
+        # 最初の STRAIGHT_STEPS ステップは直線移動（回避なし）
         print(f"\n=== ステップ {self.step_idx}: 回避のための事後分布分析 ===")
-        if self.step_idx < 10:
+        if self.step_idx < STRAIGHT_STEPS:
             avoid_angle = 0.0
             flag = True
             print(f"ステップ{self.step_idx}: 直線移動モード（回避なし）")
         else:
-            # 回避のための事後分布分析：前方左右30度を5度ごとに、1.5mまで0.1mごとに分析
+            # 回避のための事後分布分析（範囲は _analyze_posterior_for_avoidance 参照）
             angle_results, avoid_angle, value, flag = self._analyze_posterior_for_avoidance(X_sel, Y_sel, posterior_sel)
 
         # 最も安全な角度に移動する
         new_fd = self.normalize_angle_deg(fd - avoid_angle)
 
         # パルス放射方向の計算
-        if self.step_idx < 10:
-            # 最初の10ステップは左に50度固定
-            new_pd = self.normalize_angle_deg(fd + 50.0)
-            print(f"ステップ{self.step_idx}: パルス放射方向を左50度固定 (fd={fd:.1f}° → pd={new_pd:.1f}°)")
+        if self.step_idx < STRAIGHT_STEPS:
+            # 初期直進フェーズはパルスを左に INITIAL_PULSE_OFFSET_DEG 度固定
+            new_pd = self.normalize_angle_deg(fd + INITIAL_PULSE_OFFSET_DEG)
+            print(f"ステップ{self.step_idx}: パルス放射方向を左{INITIAL_PULSE_OFFSET_DEG:.0f}度固定 (fd={fd:.1f}° → pd={new_pd:.1f}°)")
         else:
-            # ステップ10以降は通常の計算
+            # ステップ STRAIGHT_STEPS 以降は通常の計算
             new_pd = self.normalize_angle_deg(pd - avoid_angle)
+            # NOTE: この条件は step>=10 分岐の内側にあるため常に真（死んだ条件）。
+            #       意図（step6〜9用の名残?）が不明なため挙動保存のまま温存している。
+            #       詳細は REFACTORING_PLAN.md の [!question] を参照
             if self.step_idx >= 6:
-                new_pd = self.normalize_angle_deg(fd - (avoid_angle * 1.3))
+                new_pd = self.normalize_angle_deg(fd - (avoid_angle * PULSE_AVOID_FACTOR))
 
         print(f"{fd}度から{-avoid_angle}度があって{new_fd}度へ移動")
         print(f"pd: {new_pd}度")
 
         if flag == True:
-            # 通常移動: 0.15m
-            new_posx = posx + 0.15 * np.cos(np.deg2rad(new_fd))
-            new_posy = posy + 0.15 * np.sin(np.deg2rad(new_fd))
+            # 通常移動
+            new_posx = posx + STEP_DISTANCE * np.cos(np.deg2rad(new_fd))
+            new_posy = posy + STEP_DISTANCE * np.sin(np.deg2rad(new_fd))
         else:
-            # 緊急回避: 0.05m
-            new_posx = posx + 0.05 * np.cos(np.deg2rad(new_fd))
-            new_posy = posy + 0.05 * np.sin(np.deg2rad(new_fd))
-        
+            # 緊急回避（慎重に小さく進む）
+            new_posx = posx + EMERGENCY_STEP_DISTANCE * np.cos(np.deg2rad(new_fd))
+            new_posy = posy + EMERGENCY_STEP_DISTANCE * np.sin(np.deg2rad(new_fd))
+
         return new_posx, new_posy, new_fd, new_pd, flag
 
     def calculate_avoidance_command(self, current_position, step):
@@ -213,8 +234,8 @@ class Agent:
             fd=current_position['fd']
         )
 
-        # 最初の10ステップは直線移動（回避なし）
-        if step < 10:
+        # 最初の STRAIGHT_STEPS ステップは直線移動（回避なし）
+        if step < STRAIGHT_STEPS:
             avoid_angle = 0.0
             flag = True
             print(f"  [移動指令計算] ステップ{step}: 直線移動モード（回避なし）")
@@ -228,21 +249,23 @@ class Agent:
         new_fd = self.normalize_angle_deg(current_position['fd'] - avoid_angle)
 
         # パルス放射方向の計算
-        if step < 10:
-            # 最初の10ステップは左に50度固定
-            new_pd = self.normalize_angle_deg(current_position['fd'] + 50.0)
-            print(f"  [移動指令計算] ステップ{step}: パルス放射方向を左50度固定 (fd={current_position['fd']:.1f}° → pd={new_pd:.1f}°)")
+        if step < STRAIGHT_STEPS:
+            # 初期直進フェーズはパルスを左に INITIAL_PULSE_OFFSET_DEG 度固定
+            new_pd = self.normalize_angle_deg(current_position['fd'] + INITIAL_PULSE_OFFSET_DEG)
+            print(f"  [移動指令計算] ステップ{step}: パルス放射方向を左{INITIAL_PULSE_OFFSET_DEG:.0f}度固定 (fd={current_position['fd']:.1f}° → pd={new_pd:.1f}°)")
         else:
-            # ステップ10以降は通常の計算
+            # ステップ STRAIGHT_STEPS 以降は通常の計算
             new_pd = self.normalize_angle_deg(current_position['pd'] - avoid_angle)
+            # NOTE: この条件は step>=10 分岐の内側にあるため常に真（死んだ条件）。
+            #       _sim_flight2 側と同じ理由で挙動保存のまま温存している
             if step >= 6:
-                new_pd = self.normalize_angle_deg(current_position['fd'] - (avoid_angle * 1.3))
+                new_pd = self.normalize_angle_deg(current_position['fd'] - (avoid_angle * PULSE_AVOID_FACTOR))
 
-        # 移動距離を決定
+        # 移動距離を決定（ロボットへ送る指令は mm 単位）
         if flag:
-            move_distance = 150.0  # mm (通常移動: 0.15m)
+            move_distance = STEP_DISTANCE_MM
         else:
-            move_distance = 50.0  # mm (緊急回避: 0.05m)
+            move_distance = EMERGENCY_STEP_DISTANCE_MM
         
         # 新しい位置を計算
         move_distance_m = move_distance / 1000.0  # mm -> m
@@ -273,144 +296,129 @@ class Agent:
         return command, new_position, emergency_avoidance
 
     def _analyze_posterior_for_avoidance(self, X_sel, Y_sel, posterior_sel):
+        """回避のための事後分布分析。
+
+        前方 -30〜+25 度（5度刻み、np.arange 由来で非対称）× 距離0.05〜0.70m
+        （0.05m刻み）の各方向について事後分布値の平均を集計し、最も安全な
+        （値が低い）方向を選ぶ。近距離に危険（値が高い）方向がある場合は、
+        左右で数を比べて少ない側へ±60度の緊急回避を行う。
+
+        _sim_flight2（シミュレーション経路）と calculate_avoidance_command
+        （本番経路）の両方から呼ばれる共通の回避判断ロジック。
+
+        Returns:
+            tuple: (angle_results, avoid_angle, value, flag)
+                - angle_results: {角度: {距離: 平均値, 'total': 合計}} の集計辞書
+                - avoid_angle: 選択した回避角度
+                - value: その角度での評価値
+                - flag: True=通常回避 / False=緊急回避（前進を抑える）
         """
-        回避のための事後分布分析
-        前方の左右30度までを5度ごとに、0.7mまでの値を0.05mごとに足して
-        それぞれの角度での合計を表示する
+        # 角度範囲（-30〜+25度、5度ごと）と距離範囲（0.05〜0.70m、0.05mごと）
+        angles = np.arange(-30, 30, 5)
+        distances = np.arange(0.05, 0.75, 0.05)
+
+        # 各(角度, 距離)での事後分布値の平均を集計
+        angle_results = self._aggregate_posterior_by_direction(X_sel, Y_sel, posterior_sel, angles, distances)
+
+        if self.verbose:
+            self._print_avoidance_table(angles, distances, angle_results)
+
+        # 最も安全な角度（合計値が最も低い角度）を特定
+        min_angle = min(angles, key=lambda a: angle_results[a]['total'])
+        min_value = angle_results[min_angle]['total']
+
+        # 近距離に危険方向があれば緊急回避（左右の少ない側へ±60度）
+        avoidance_angle = self._decide_emergency_avoidance(angles, distances, angle_results)
+        if avoidance_angle is not None:
+            # 危険な角度で60度回る場合は、Falseを返して進行しないようにする
+            return angle_results, avoidance_angle, -10.0, False
+
+        # 危険な角度がない場合は連続回避カウンターをリセットして通常回避
+        self.consecutive_avoidance_count = 0
+        return angle_results, min_angle, min_value, True
+
+    def _aggregate_posterior_by_direction(self, X_sel, Y_sel, posterior_sel, angles, distances):
+        """各(角度, 距離)の範囲に入る事後分布値の平均を集計して辞書で返す。
+
+        Returns:
+            dict: {角度: {距離: 平均値, ..., 'total': 距離方向の合計}}
         """
-        # 角度範囲の設定（左右30度、5度ごと）
-        angles = np.arange(-30, 30, 5)  # -30, -25, -20, ..., 25, 30
-        distances = np.arange(0.05, 0.75, 0.05)  # 0.05, 0.10, 0.15, ..., 0.70
-        
-        # 結果を格納する辞書
         angle_results = {}
-        
-        # 表形式で表示（横が距離、縦が角度）
-        print("事後分布値（対数確率）の表（横：距離[m]、縦：角度[度]）:")
-        
-        # ヘッダー行（距離）
-        header = "角度[度] |"
-        for distance in distances:
-            header += f" {distance:5.1f} |"
-        print(header)
-        
-        # 区切り線
-        separator = "---------|"
-        for _ in distances:
-            separator += "-------|"
-        print(separator)
-        
-        # 各角度の行
         for angle in angles:
             angle_rad = np.deg2rad(angle)
             angle_results[angle] = {}
             cumulative_sum = 0.0
-            
-            # 角度の行を開始
-            row = f"{angle:7.0f} |"
-            
             for distance in distances:
-                # 指定角度・距離の範囲内のデータを抽出
-                # 角度の計算（arctan2を使用）
-                angle_mask = np.abs(np.arctan2(X_sel, Y_sel) - angle_rad) < np.deg2rad(2.5)  # ±2.5度の範囲
-                dist_mask = np.abs(Y_sel - distance) < 0.05  # ±0.05mの範囲
+                # 指定角度・距離の範囲内（角度±2.5度・距離±0.05m）のデータを抽出
+                angle_mask = np.abs(np.arctan2(X_sel, Y_sel) - angle_rad) < np.deg2rad(2.5)
+                dist_mask = np.abs(Y_sel - distance) < 0.05
                 combined_mask = angle_mask & dist_mask
-                
+
                 if np.any(combined_mask):
-                    values_at_angle_dist = posterior_sel[combined_mask]
-                    avg_value = np.mean(values_at_angle_dist)
+                    avg_value = np.mean(posterior_sel[combined_mask])
                     cumulative_sum += avg_value
                     angle_results[angle][distance] = avg_value
-                    row += f" {avg_value:5.2f} |"
                 else:
                     angle_results[angle][distance] = 0.0
-                    row += f" {'N/A':>5} |"
-            
-            # 行を表示
-            print(row)
-            
-            # 各角度での合計を保存
+
+            # 各角度での距離方向の合計を保存
             angle_results[angle]['total'] = cumulative_sum
-        
-        # 各角度での合計を表示
-        print("\n各角度での事後分布値の合計:")
-        print("角度[度] | 合計値（対数確率）")
-        print("---------|------------------")
-        for angle in angles:
-            total = angle_results[angle]['total']
-            print(f"{angle:7.0f} | {total:16.2f}")
-        
-        # 最も安全な角度（合計値が最も低い角度）を特定
-        # angles の中で一番最初にその最大値を持った a が min_angle に選ばれる。
-        min_angle = min(angles, key=lambda a: angle_results[a]['total'])
-        min_value = angle_results[min_angle]['total']
-        # 最も危険な角度（合計値が最も高い角度）を特定
-        # angles の中で一番最初にその最小値を持った a が max_angle に選ばれる。
-        max_angle = max(angles, key=lambda a: angle_results[a]['total'])
-        max_value = angle_results[max_angle]['total']
-        print(f"\n最も危険な角度: {max_angle}度 (合計値: {max_value:.2f})")
-        print(f"最も安全な角度: {min_angle}度 (合計値: {min_value:.2f})")
-        print("=" * 50)
-        
-        
-        # 新しい回避機能：既存の計算結果を活用して角度-30度から30度の範囲で距離0.5m以内に事後分布の値が-10以上のものがあれば左右で数を数えて少ない方に回避する
-        print("\n=== 新しい回避機能のチェック ===")
-        
-        # 距離0.5m以内のデータをチェック（既存の計算結果を活用）
-        check_distances = [d for d in distances if d <= 0.4]  # 0.3m以下の距離のみ
-        
+        return angle_results
+
+    def _decide_emergency_avoidance(self, angles, distances, angle_results):
+        """近距離(DANGER_DISTANCE以内)に危険方向(値>=DANGER_THRESHOLD)があれば緊急回避角度を決める。
+
+        危険がなければ None を返す。危険があれば左右の危険数を比べて
+        少ない側へ ±EMERGENCY_AVOID_ANGLE 度回避し、self.last_avoidance_direction /
+        consecutive_avoidance_count を更新する（連続回避は前回方向を維持）。
+        """
+        # 近距離(DANGER_DISTANCE 以内)で事後分布値が DANGER_THRESHOLD 以上の方向を「危険」とみなす
+        check_distances = [d for d in distances if d <= DANGER_DISTANCE]
         dangerous_angles = []
-        
-        # 既存の計算結果から-100以上の値をチェック
         for angle in angles:
             for distance in check_distances:
                 if distance in angle_results[angle]:
-                    value = angle_results[angle][distance]
-                    if value >= -50:
+                    if angle_results[angle][distance] >= DANGER_THRESHOLD:
                         dangerous_angles.append(angle)
-                        print(f"危険な角度を発見: {angle}度 (距離: {distance}m, 値: {value:.2f})")
-        
-        if dangerous_angles:
-            # 左右で数を数える
-            left_count = len([angle for angle in dangerous_angles if angle < 0])
-            right_count = len([angle for angle in dangerous_angles if angle > 0])
-            
-            print(f"左側（負の角度）の危険な角度数: {left_count}")
-            print(f"右側（正の角度）の危険な角度数: {right_count}")
-            
-            # 連続回避の場合は前回と同じ方向に回避する
-            if self.last_avoidance_direction is not None and self.consecutive_avoidance_count > 0:
-                # 前回と同じ方向に回避
-                avoidance_angle = self.last_avoidance_direction
-                print(f"連続回避: 前回と同じ方向({avoidance_angle}度)に回避")
-                self.consecutive_avoidance_count += 1
-            else:
-                # 通常の回避ロジック（少ない方に回避）
-                if left_count <= right_count:
-                    # 左側が少ない場合、右側に回避
-                    avoidance_angle = 60
-                    print(f"左側が少ないため、右側（{avoidance_angle}度）に回避")
-                else:
-                    # 右側が少ない場合、左側に回避
-                    avoidance_angle = -60
-                    print(f"右側が少ないため、左側（{avoidance_angle}度）に回避")
-                # 回避を開始したので、カウンターを1に設定
-                self.consecutive_avoidance_count = 1
-            
-            # 今回の回避方向を記録
-            self.last_avoidance_direction = avoidance_angle
-            
-            print("=" * 50)
-            # 危険な角度で60度回る場合は、Falseを返して進行しないようにする。
-            return angle_results, avoidance_angle, -10.0, False  # 新しい回避角度を返す
-        
-        print("危険な角度は見つかりませんでした。従来の回避方法を使用します。")
-        print("=" * 50)
-        
-        # 危険な角度がない場合は連続回避カウンターをリセット
-        self.consecutive_avoidance_count = 0
-        
-        return angle_results, min_angle, min_value, True
+
+        if not dangerous_angles:
+            return None
+
+        # 左右で危険方向の数を数える
+        left_count = len([angle for angle in dangerous_angles if angle < 0])
+        right_count = len([angle for angle in dangerous_angles if angle > 0])
+
+        # 連続回避中は前回と同じ方向を維持、そうでなければ危険の少ない側へ回避
+        if self.last_avoidance_direction is not None and self.consecutive_avoidance_count > 0:
+            avoidance_angle = self.last_avoidance_direction
+            self.consecutive_avoidance_count += 1
+        else:
+            avoidance_angle = EMERGENCY_AVOID_ANGLE if left_count <= right_count else -EMERGENCY_AVOID_ANGLE
+            self.consecutive_avoidance_count = 1
+
+        # 今回の回避方向を記録
+        self.last_avoidance_direction = avoidance_angle
+        return avoidance_angle
+
+    def _print_avoidance_table(self, angles, distances, angle_results):
+        """回避分析の詳細テーブルを標準出力に表示する（self.verbose 時のみ）。"""
+        print("事後分布値（対数確率）の表（横：距離[m]、縦：角度[度]）:")
+        header = "角度[度] |"
+        for distance in distances:
+            header += f" {distance:5.2f} |"
+        print(header)
+        separator = "---------|" + "-------|" * len(distances)
+        print(separator)
+        for angle in angles:
+            row = f"{angle:7.0f} |"
+            for distance in distances:
+                value = angle_results[angle][distance]
+                row += f" {value:5.2f} |" if value != 0.0 else f" {'N/A':>5} |"
+            print(row)
+
+        print("\n各角度での事後分布値の合計:")
+        for angle in angles:
+            print(f"{angle:7.0f} | {angle_results[angle]['total']:16.2f}")
 
     def _plot_posterior_distribution(self, posx, posy, fd, pd):
         """
